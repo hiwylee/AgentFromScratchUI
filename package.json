@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node -e \"const fs=require('fs');if(!fs.existsSync('.env.local')){fs.copyFileSync('.env.local.example','.env.local');console.log('✓ .env.local created from .env.local.example');}\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

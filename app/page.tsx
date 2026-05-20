@@ -37,42 +37,120 @@ function JsonBlock({ data }: { data: unknown }) {
   );
 }
 
+function asObj(v: unknown): Record<string, unknown> | null {
+  return v != null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+function asStr(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") return v || null;
+  if (typeof v === "object") return null;
+  return String(v);
+}
+
 function ResultCard({ result }: { result: Record<string, unknown> }) {
-  const intent = result.intent != null ? String(result.intent) : null;
-  const action = result.action != null ? String(result.action) : null;
-  const finalAnswer = result.final_answer != null ? String(result.final_answer) : null;
-  const status = result.status != null ? String(result.status) : null;
-  const runId = result.run_id != null ? String(result.run_id) : null;
+  const intent = asObj(result.intent);
+  const action = asObj(result.action);
+  const finalAnswer = asObj(result.final_answer);
+  const runId = asStr(result.run_id);
 
   return (
     <div className="space-y-3 mt-2">
       {intent && (
-        <div className="glass rounded-md px-3 py-2">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Intent</div>
-          <div className="text-sm text-foreground">{intent}</div>
-        </div>
-      )}
-      {action && (
-        <div className="glass rounded-md px-3 py-2">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Action</div>
-          <div className="text-sm font-mono text-[oklch(0.75_0.18_200)]">{action}</div>
-        </div>
-      )}
-      {finalAnswer && (
-        <div className="rounded-md px-3 py-2 bg-[oklch(0.72_0.19_280/0.1)] border border-[oklch(0.72_0.19_280/0.25)]">
-          <div className="text-[10px] uppercase tracking-widest text-[oklch(0.72_0.19_280)] mb-1">Final Answer</div>
-          <div className="text-sm text-foreground leading-relaxed">{finalAnswer}</div>
-        </div>
-      )}
-      {status && (
-        <div className="flex items-center gap-2">
-          <StatusBadge status={status} />
-          {runId && (
-            <span className="text-xs font-mono text-muted-foreground">{runId}</span>
+        <div className="glass rounded-md px-3 py-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Intent</div>
+          <div className="flex flex-wrap gap-2">
+            {asStr(intent.intent_type) && (
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 text-cyan-300">
+                {asStr(intent.intent_type)}
+              </span>
+            )}
+            {asStr(intent.task_type) && (
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 text-muted-foreground">
+                {asStr(intent.task_type)}
+              </span>
+            )}
+            {asStr(intent.safety_level) && (
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 text-yellow-400/80">
+                {asStr(intent.safety_level)}
+              </span>
+            )}
+          </div>
+          {asStr(intent.next_action) && (
+            <div className="text-xs text-muted-foreground">
+              Next: <span className="text-foreground">{asStr(intent.next_action)}</span>
+            </div>
           )}
         </div>
       )}
+
+      {action && (
+        <div className="glass rounded-md px-3 py-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Action</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono px-2 py-0.5 rounded bg-[oklch(0.65_0.22_200/0.15)] border border-[oklch(0.65_0.22_200/0.3)] text-[oklch(0.75_0.18_200)]">
+              {asStr(action.kind) ?? "—"}
+            </span>
+          </div>
+          {asStr(action.reason) && (
+            <div className="text-xs text-muted-foreground leading-relaxed">{asStr(action.reason)}</div>
+          )}
+        </div>
+      )}
+
+      {finalAnswer && (
+        <div className="rounded-md px-3 py-2 bg-[oklch(0.72_0.19_280/0.1)] border border-[oklch(0.72_0.19_280/0.25)] space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-[oklch(0.72_0.19_280)]">Final Answer</div>
+          {asStr(finalAnswer.content) && (
+            <div className="text-sm text-foreground leading-relaxed">{asStr(finalAnswer.content)}</div>
+          )}
+          {asStr(finalAnswer.next_action) && asStr(finalAnswer.next_action) !== "none" && (
+            <div className="text-xs text-muted-foreground">
+              Next: <span className="text-foreground/70">{asStr(finalAnswer.next_action)}</span>
+            </div>
+          )}
+          {Array.isArray(finalAnswer.assumptions) && finalAnswer.assumptions.length > 0 && (
+            <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
+              {(finalAnswer.assumptions as unknown[]).map((a, i) => (
+                <li key={i}>{String(a)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {runId && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-muted-foreground/60">run: {runId}</span>
+        </div>
+      )}
+
       <JsonBlock data={result} />
+    </div>
+  );
+}
+
+function ErrorCard({ error }: { error: string }) {
+  const isLong = error.length > 120;
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/5 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-destructive/20">
+        <span className="text-[10px] uppercase tracking-widest text-destructive/80 font-semibold">Error</span>
+      </div>
+      <pre className={`px-3 py-2 text-xs font-mono text-destructive/90 whitespace-pre-wrap break-all leading-relaxed ${!expanded && isLong ? "max-h-24 overflow-hidden" : ""}`}>
+        {error}
+      </pre>
+      {isLong && (
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="w-full text-center text-[10px] text-muted-foreground hover:text-foreground py-1 border-t border-destructive/20 transition-colors"
+        >
+          {expanded ? "Show less" : "Show full error"}
+        </button>
+      )}
     </div>
   );
 }
@@ -117,10 +195,14 @@ export default function ChatPage() {
       });
       const data = await res.json();
 
+      const finalAnswerContent =
+        typeof data.final_answer?.content === "string"
+          ? data.final_answer.content
+          : data.raw ?? "";
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.final_answer ?? data.raw ?? "Agent returned a response.",
+        content: finalAnswerContent,
         result: res.ok ? data : undefined,
         error: !res.ok ? (data.error ?? "Unknown error") : undefined,
         ts: Date.now(),
@@ -212,13 +294,12 @@ export default function ChatPage() {
                   className={`rounded-xl px-4 py-2.5 text-sm leading-relaxed ${
                     msg.role === "user"
                       ? "bg-primary/15 border border-primary/25 text-foreground"
-                      : msg.error
-                      ? "bg-destructive/10 border border-destructive/30 text-destructive"
                       : "glass text-foreground"
                   }`}
                 >
                   {msg.content}
-                  {msg.result && <ResultCard result={msg.result} />}
+                  {msg.error && <ErrorCard error={msg.error} />}
+                  {msg.result && !msg.error && <ResultCard result={msg.result} />}
                 </div>
                 <span className="text-[10px] text-muted-foreground/50 mt-1 px-1 font-mono">
                   {new Date(msg.ts).toLocaleTimeString()}
