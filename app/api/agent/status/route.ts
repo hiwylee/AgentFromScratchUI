@@ -37,9 +37,7 @@ function runAgent(args: string[]): Promise<unknown> {
         return;
       }
       try {
-        const lines = stdout.trim().split("\n").filter(Boolean);
-        const lastLine = lines[lines.length - 1];
-        resolve(JSON.parse(lastLine));
+        resolve(JSON.parse(stdout.trim()));
       } catch {
         resolve({ raw: stdout, runs: [] });
       }
