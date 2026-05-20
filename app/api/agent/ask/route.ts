@@ -5,6 +5,8 @@ import path from "path";
 const AGENT_BIN = process.env.AGENT_BIN_PATH ?? "/Users/wylee/WorkspacesV2/AgentFromScratch/bin/agent";
 const RUN_DIR = process.env.AGENT_RUN_DIR ?? "/tmp/afs-runs";
 const AUDIT_LOG = process.env.AGENT_AUDIT_LOG ?? "/tmp/afs.jsonl";
+// cwd must be the AgentFromScratch project root so uv resolves the correct venv
+const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? path.dirname(path.dirname(path.resolve(AGENT_BIN)));
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +35,8 @@ function runAgent(args: string[]): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const agentPath = path.resolve(AGENT_BIN);
     const proc = spawn(agentPath, args, {
-      env: { ...process.env },
+      cwd: PROJECT_DIR,
+      env: { ...process.env, UV_CACHE_DIR: path.join(PROJECT_DIR, ".uv-cache") },
       timeout: 60000,
     });
 

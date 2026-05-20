@@ -56,3 +56,4 @@ All API routes spawn the `bin/agent` CLI subprocess and return parsed JSON. No d
 | 2026-05-20 | Fix: backend `bin/agent` upgraded to Python 3.13 (workspace requires >=3.13); `pyproject.toml` updated accordingly |
 | 2026-05-20 | Fix: chat page extracts `final_answer.content` correctly; error messages shown in readable `ErrorCard` instead of raw red bubble |
 | 2026-05-20 | Feat: `postinstall` script auto-creates `.env.local` from `.env.local.example` on `npm install` |
+| 2026-05-20 | Fix: API routes set `cwd=AGENT_PROJECT_DIR` and `UV_CACHE_DIR` so `uv` resolves the correct venv instead of `/Users/wylee/.venv` |
