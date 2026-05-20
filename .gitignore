@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# oh-my-claudecode state
+.omc/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
