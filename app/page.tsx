@@ -60,7 +60,7 @@ function ResultCard({ result }: { result: Record<string, unknown> }) {
     <div className="space-y-3 mt-2">
       {intent && (
         <div className="glass rounded-md px-3 py-2 space-y-1">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Intent</div>
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">Intent</div>
           <div className="flex flex-wrap gap-2">
             {asStr(intent.intent_type) && (
               <span className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 text-cyan-300">
@@ -88,23 +88,23 @@ function ResultCard({ result }: { result: Record<string, unknown> }) {
 
       {action && (
         <div className="glass rounded-md px-3 py-2 space-y-1">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Action</div>
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">Action</div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono px-2 py-0.5 rounded bg-[oklch(0.65_0.22_200/0.15)] border border-[oklch(0.65_0.22_200/0.3)] text-[oklch(0.75_0.18_200)]">
               {asStr(action.kind) ?? "—"}
             </span>
           </div>
           {asStr(action.reason) && (
-            <div className="text-xs text-muted-foreground leading-relaxed">{asStr(action.reason)}</div>
+            <div className="text-sm text-muted-foreground leading-relaxed">{asStr(action.reason)}</div>
           )}
         </div>
       )}
 
       {finalAnswer && (
         <div className="rounded-md px-3 py-2 bg-[oklch(0.72_0.19_280/0.1)] border border-[oklch(0.72_0.19_280/0.25)] space-y-1.5">
-          <div className="text-[10px] uppercase tracking-widest text-[oklch(0.72_0.19_280)]">Final Answer</div>
+          <div className="text-xs uppercase tracking-widest text-[oklch(0.72_0.19_280)]">Final Answer</div>
           {asStr(finalAnswer.content) && (
-            <div className="text-sm text-foreground leading-relaxed">{asStr(finalAnswer.content)}</div>
+            <div className="text-base text-foreground leading-relaxed">{asStr(finalAnswer.content)}</div>
           )}
           {asStr(finalAnswer.next_action) && asStr(finalAnswer.next_action) !== "none" && (
             <div className="text-xs text-muted-foreground">
@@ -112,7 +112,7 @@ function ResultCard({ result }: { result: Record<string, unknown> }) {
             </div>
           )}
           {Array.isArray(finalAnswer.assumptions) && finalAnswer.assumptions.length > 0 && (
-            <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
+            <ul className="text-sm text-muted-foreground space-y-0.5 list-disc list-inside">
               {(finalAnswer.assumptions as unknown[]).map((a, i) => (
                 <li key={i}>{String(a)}</li>
               ))}
@@ -138,7 +138,7 @@ function ErrorCard({ error }: { error: string }) {
   return (
     <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/5 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-destructive/20">
-        <span className="text-[10px] uppercase tracking-widest text-destructive/80 font-semibold">Error</span>
+        <span className="text-xs uppercase tracking-widest text-destructive/80 font-semibold">Error</span>
       </div>
       <pre className={`px-3 py-2 text-xs font-mono text-destructive/90 whitespace-pre-wrap break-all leading-relaxed ${!expanded && isLong ? "max-h-24 overflow-hidden" : ""}`}>
         {error}
@@ -146,7 +146,7 @@ function ErrorCard({ error }: { error: string }) {
       {isLong && (
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="w-full text-center text-[10px] text-muted-foreground hover:text-foreground py-1 border-t border-destructive/20 transition-colors"
+          className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-1 border-t border-destructive/20 transition-colors"
         >
           {expanded ? "Show less" : "Show full error"}
         </button>
@@ -238,8 +238,8 @@ export default function ChatPage() {
           <Bot className="w-4 h-4 text-white" />
         </div>
         <div>
-          <h1 className="text-sm font-semibold text-foreground">Agent Chat</h1>
-          <p className="text-xs text-muted-foreground">Natural language interface to AgentFromScratch</p>
+          <h1 className="text-base font-semibold text-foreground">Agent Chat</h1>
+          <p className="text-sm text-muted-foreground">Natural language interface to AgentFromScratch</p>
         </div>
       </div>
 
@@ -257,7 +257,7 @@ export default function ChatPage() {
               </div>
               <div className="text-center">
                 <h2 className="text-xl font-semibold gradient-text mb-2">AgentFromScratch Console</h2>
-                <p className="text-sm text-muted-foreground max-w-xs">
+                <p className="text-base text-muted-foreground max-w-xs">
                   Ask questions in natural language. The agent will interpret your intent, select actions, and return structured results.
                 </p>
               </div>
@@ -266,7 +266,7 @@ export default function ChatPage() {
                   <button
                     key={s}
                     onClick={() => handleSubmit(s)}
-                    className="text-left text-xs px-3 py-2.5 rounded-lg glass border border-border/40 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-150"
+                    className="text-left text-sm px-3 py-3 rounded-lg glass border border-border/40 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-150"
                   >
                     {s}
                   </button>
@@ -291,7 +291,7 @@ export default function ChatPage() {
               )}
               <div className={`max-w-[75%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col`}>
                 <div
-                  className={`rounded-xl px-4 py-2.5 text-sm leading-relaxed ${
+                  className={`rounded-xl px-4 py-3 text-base leading-relaxed ${
                     msg.role === "user"
                       ? "bg-primary/15 border border-primary/25 text-foreground"
                       : "glass text-foreground"
@@ -301,7 +301,7 @@ export default function ChatPage() {
                   {msg.error && <ErrorCard error={msg.error} />}
                   {msg.result && !msg.error && <ResultCard result={msg.result} />}
                 </div>
-                <span className="text-[10px] text-muted-foreground/50 mt-1 px-1 font-mono">
+                <span className="text-xs text-muted-foreground/50 mt-1 px-1 font-mono">
                   {new Date(msg.ts).toLocaleTimeString()}
                 </span>
               </div>
@@ -324,7 +324,7 @@ export default function ChatPage() {
               </div>
               <div className="glass rounded-xl px-4 py-3 flex items-center gap-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground font-mono">Agent processing</span>
+                <span className="text-base text-muted-foreground font-mono">Agent processing</span>
                 <span className="cursor-blink text-primary">_</span>
               </div>
             </motion.div>

@@ -58,3 +58,4 @@ All API routes spawn the `bin/agent` CLI subprocess and return parsed JSON. No d
 | 2026-05-20 | Feat: `postinstall` script auto-creates `.env.local` from `.env.local.example` on `npm install` |
 | 2026-05-20 | Fix: API routes set `cwd=AGENT_PROJECT_DIR` and `UV_CACHE_DIR` so `uv` resolves the correct venv instead of `/Users/wylee/.venv` |
 | 2026-05-20 | Fix: parse full stdout as JSON (not last line) — agent outputs pretty-printed multi-line JSON; last-line parse returned `}` causing raw fallback |
+| 2026-05-20 | Improve: readability — muted-foreground brighter (0.55→0.70), message/answer text text-base, action reason text-sm, suggested buttons text-sm |
