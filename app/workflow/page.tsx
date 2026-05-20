@@ -33,17 +33,19 @@ interface StepState {
 }
 
 const STEP_EXAMPLES = [
-  "Reconcile Q1 FY26 sales data between NAOS and ADW",
-  "Load customer master data from source A to Oracle ADW",
-  "Run monthly billing reconciliation workflow",
+  "이번달 특허자산 대체 등록 진행해줘",
+  "금월 특허 자산 대체 등록 워크플로우 실행",
+  "특허자산 대체 등록 처리 시작해줘",
 ];
+
+const SUPPORTED_HINT = "※ 현재 지원 워크플로우: 특허자산 대체 등록 (한국어, '특허'+'대체'+'등록' 포함 필요)";
 
 function StepIcon({ status }: { status: StepStatus }) {
   if (status === "completed") return <CheckCircle2 className="w-4 h-4 text-[oklch(0.70_0.18_145)]" />;
   if (status === "running") return <Loader2 className="w-4 h-4 text-[oklch(0.65_0.22_200)] animate-spin" />;
   if (status === "failed") return <AlertCircle className="w-4 h-4 text-[oklch(0.65_0.22_25)]" />;
   if (status === "skipped") return <Clock className="w-4 h-4 text-muted-foreground/40" />;
-  return <Circle className="w-4 h-4 text-muted-foreground/30" />;
+  return <Circle className="w-4 h-4 text-muted-foreground/60" />;
 }
 
 function mapResultToSteps(result: WorkflowResult): Record<string, StepState> {
@@ -129,8 +131,8 @@ export default function WorkflowPage() {
           <GitBranch className="w-4 h-4 text-white" />
         </div>
         <div>
-          <h1 className="text-sm font-semibold">Workflow Runner</h1>
-          <p className="text-xs text-muted-foreground">State machine: A/B Lookup → Enrichment → Reconciliation → Review → Load</p>
+          <h1 className="text-base font-semibold">Workflow Runner</h1>
+          <p className="text-sm text-muted-foreground">A/B 조회 → 보강 → 조정 → 검토 → 로드</p>
         </div>
       </div>
 
@@ -152,7 +154,7 @@ export default function WorkflowPage() {
               className="gap-2 bg-primary hover:bg-primary/80 glow-purple"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              {loading ? "Running…" : "Run Workflow"}
+              {loading ? "실행 중…" : "워크플로우 실행"}
             </Button>
             <div className="flex gap-1.5 flex-wrap">
               {STEP_EXAMPLES.map((ex) => (
@@ -160,12 +162,15 @@ export default function WorkflowPage() {
                   key={ex}
                   onClick={() => setQuery(ex)}
                   disabled={loading}
-                  className="text-xs px-2 py-1 rounded-md border border-border/40 text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors"
+                  className="text-sm px-2 py-1 rounded-md border border-border/40 text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors"
                 >
                   {ex.length > 40 ? ex.slice(0, 40) + "…" : ex}
                 </button>
               ))}
             </div>
+          </div>
+          <div className="text-xs text-muted-foreground border border-border/30 rounded-md px-3 py-2 bg-secondary/20">
+            {SUPPORTED_HINT}
           </div>
         </div>
 
@@ -188,7 +193,7 @@ export default function WorkflowPage() {
                         ? "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]"
                         : state.status === "failed"
                         ? "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]"
-                        : "border-border/30 bg-secondary/20"
+                        : "border-border/50 bg-secondary/30"
                     }`}>
                       <StepIcon status={state.status} />
                     </div>
@@ -202,7 +207,7 @@ export default function WorkflowPage() {
                   {/* Content */}
                   <motion.div
                     className="flex-1 pb-4"
-                    animate={{ opacity: state.status === "pending" ? 0.5 : 1 }}
+                    animate={{ opacity: state.status === "pending" ? 0.75 : 1 }}
                     transition={{ duration: 0.3 }}
                   >
                     <div className="flex items-center gap-2 mb-0.5 h-8">
@@ -210,7 +215,7 @@ export default function WorkflowPage() {
                         state.status === "completed" ? "text-[oklch(0.70_0.18_145)]"
                         : state.status === "running" ? "text-[oklch(0.65_0.22_200)]"
                         : state.status === "failed" ? "text-[oklch(0.65_0.22_25)]"
-                        : "text-muted-foreground"
+                        : "text-foreground/80"
                       }`}>
                         {step.label}
                       </span>
@@ -220,7 +225,7 @@ export default function WorkflowPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground/60">{step.description}</div>
+                    <div className="text-sm text-muted-foreground">{step.description}</div>
                     {state.result != null && (
                       <pre className="mt-2 text-xs font-mono text-cyan-300/70 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto">
                         {JSON.stringify(state.result, null, 2)}
@@ -244,8 +249,17 @@ export default function WorkflowPage() {
             >
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Raw Result</div>
               {result?.error && (
-                <div className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2 border border-destructive/30">
-                  {result.error}
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-1">
+                  <div className="text-xs uppercase tracking-widest text-destructive/80 font-semibold">오류</div>
+                  {result.error.includes("unsupported_workflow") ? (
+                    <div className="space-y-1">
+                      <div className="text-sm text-destructive font-medium">지원하지 않는 워크플로우 요청입니다.</div>
+                      <div className="text-sm text-muted-foreground">지원 워크플로우: <span className="font-mono text-foreground">patent_asset_replacement_registration</span></div>
+                      <div className="text-sm text-muted-foreground">요청 텍스트에 <span className="text-yellow-400">특허</span> + <span className="text-yellow-400">대체</span> + <span className="text-yellow-400">등록</span> 세 단어가 포함되어야 합니다.</div>
+                    </div>
+                  ) : (
+                    <pre className="text-sm font-mono text-destructive/90 whitespace-pre-wrap break-all">{result.error}</pre>
+                  )}
                 </div>
               )}
               <pre className="text-xs font-mono text-cyan-300/80 leading-relaxed overflow-x-auto">
