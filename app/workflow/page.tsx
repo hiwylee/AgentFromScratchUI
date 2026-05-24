@@ -214,63 +214,120 @@ export default function WorkflowPage() {
         {/* State machine diagram */}
         <div className="glass rounded-xl p-5 space-y-4">
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Pipeline State</div>
-          <div className="flex flex-col gap-0">
-            {WORKFLOW_STEPS.map((step, idx) => {
-              const state = stepStates[step.id] ?? { status: "pending" as StepStatus };
-              const isLast = idx === WORKFLOW_STEPS.length - 1;
 
-              return (
-                <div key={step.id} className="flex gap-4">
-                  <div className="flex flex-col items-center flex-shrink-0">
-                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
-                      state.status === "completed"
-                        ? "border-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.15)]"
-                        : state.status === "running"
-                        ? "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]"
-                        : state.status === "failed"
-                        ? "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]"
+          {/* Pre-run placeholder */}
+          {!hasResult && (
+            <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground/60">
+              <GitBranch className="w-6 h-6" />
+              <p className="text-xs text-center">워크플로우를 실행하면<br/>실제 스텝이 여기에 표시됩니다</p>
+            </div>
+          )}
+
+          {/* Dynamic steps from backend result.steps[] */}
+          {hasResult && result?.steps && Array.isArray(result.steps) && result.steps.length > 0 && (
+            <div className="flex flex-col gap-0">
+              {result.steps.map((step, idx) => {
+                const isLast = idx === (result.steps?.length ?? 0) - 1;
+                const stepStatus = (step.status as StepStatus) ?? "completed";
+                return (
+                  <div key={step.name ?? idx} className="flex gap-4">
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
+                        stepStatus === "completed" ? "border-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.15)]"
+                        : stepStatus === "running" ? "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]"
+                        : stepStatus === "failed" ? "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]"
                         : "border-border/50 bg-secondary/30"
-                    }`}>
-                      <StepIcon status={state.status} />
-                    </div>
-                    {!isLast && (
-                      <div className={`w-0.5 h-8 transition-all duration-700 ${
-                        state.status === "completed" ? "bg-[oklch(0.70_0.18_145/0.5)]" : "bg-border/20"
-                      }`} />
-                    )}
-                  </div>
-
-                  <motion.div
-                    className="flex-1 pb-4"
-                    animate={{ opacity: state.status === "pending" ? 0.75 : 1 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div className="flex items-center gap-2 mb-0.5 h-8">
-                      <span className={`text-sm font-medium ${
-                        state.status === "completed" ? "text-[oklch(0.70_0.18_145)]"
-                        : state.status === "running" ? "text-[oklch(0.65_0.22_200)]"
-                        : state.status === "failed" ? "text-[oklch(0.65_0.22_25)]"
-                        : "text-foreground/80"
                       }`}>
-                        {step.label}
-                      </span>
-                      {step.id === "human_review" && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[oklch(0.80_0.18_80/0.4)] text-[oklch(0.80_0.18_80)] bg-[oklch(0.70_0.18_80/0.1)] font-mono">
-                          checkpoint
-                        </span>
+                        <StepIcon status={stepStatus} />
+                      </div>
+                      {!isLast && (
+                        <div className={`w-0.5 h-8 transition-all duration-700 ${
+                          stepStatus === "completed" ? "bg-[oklch(0.70_0.18_145/0.5)]" : "bg-border/20"
+                        }`} />
                       )}
                     </div>
-                    <div className="text-sm text-muted-foreground">{step.description}</div>
-                    {state.result != null && (
-                      <pre className="mt-2 text-xs font-mono text-cyan-300/70 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto">
-                        {JSON.stringify(state.result, null, 2)}
-                      </pre>
-                    )}
-                  </motion.div>
-                </div>
-              );
-            })}
-          </div>
+                    <motion.div
+                      className="flex-1 pb-4"
+                      animate={{ opacity: stepStatus === "pending" ? 0.75 : 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div className="flex items-center gap-2 mb-0.5 h-8">
+                        <span className={`text-sm font-medium ${
+                          stepStatus === "completed" ? "text-[oklch(0.70_0.18_145)]"
+                          : stepStatus === "running" ? "text-[oklch(0.65_0.22_200)]"
+                          : stepStatus === "failed" ? "text-[oklch(0.65_0.22_25)]"
+                          : "text-foreground/80"
+                        }`}>
+                          {step.name}
+                        </span>
+                      </div>
+                      {step.result != null && (
+                        <pre className="mt-2 text-xs font-mono text-cyan-300/70 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto">
+                          {JSON.stringify(step.result, null, 2)}
+                        </pre>
+                      )}
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Fallback: hardcoded steps (when result exists but no steps[] returned) */}
+          {hasResult && (!result?.steps || result.steps.length === 0) && (
+            <div className="flex flex-col gap-0">
+              {WORKFLOW_STEPS.map((step, idx) => {
+                const state = stepStates[step.id] ?? { status: "pending" as StepStatus };
+                const isLast = idx === WORKFLOW_STEPS.length - 1;
+                return (
+                  <div key={step.id} className="flex gap-4">
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
+                        state.status === "completed" ? "border-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.15)]"
+                        : state.status === "running" ? "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]"
+                        : state.status === "failed" ? "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]"
+                        : "border-border/50 bg-secondary/30"
+                      }`}>
+                        <StepIcon status={state.status} />
+                      </div>
+                      {!isLast && (
+                        <div className={`w-0.5 h-8 transition-all duration-700 ${
+                          state.status === "completed" ? "bg-[oklch(0.70_0.18_145/0.5)]" : "bg-border/20"
+                        }`} />
+                      )}
+                    </div>
+                    <motion.div
+                      className="flex-1 pb-4"
+                      animate={{ opacity: state.status === "pending" ? 0.75 : 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <div className="flex items-center gap-2 mb-0.5 h-8">
+                        <span className={`text-sm font-medium ${
+                          state.status === "completed" ? "text-[oklch(0.70_0.18_145)]"
+                          : state.status === "running" ? "text-[oklch(0.65_0.22_200)]"
+                          : state.status === "failed" ? "text-[oklch(0.65_0.22_25)]"
+                          : "text-foreground/80"
+                        }`}>
+                          {step.label}
+                        </span>
+                        {step.id === "human_review" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[oklch(0.80_0.18_80/0.4)] text-[oklch(0.80_0.18_80)] bg-[oklch(0.70_0.18_80/0.1)] font-mono">
+                            checkpoint
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground">{step.description}</div>
+                      {state.result != null && (
+                        <pre className="mt-2 text-xs font-mono text-cyan-300/70 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto">
+                          {JSON.stringify(state.result, null, 2)}
+                        </pre>
+                      )}
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Result */}

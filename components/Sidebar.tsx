@@ -10,6 +10,8 @@ import {
   GitBranch,
   Database,
   Zap,
+  Brain,
+  Settings2,
 } from "lucide-react";
 
 const navItems = [
@@ -42,6 +44,18 @@ const navItems = [
     label: "Schema Inspector",
     icon: Database,
     description: "Oracle ADW context",
+  },
+  {
+    href: "/memory",
+    label: "Memory",
+    icon: Brain,
+    description: "Session memory manager",
+  },
+  {
+    href: "/operator",
+    label: "Operator",
+    icon: Settings2,
+    description: "ADW tools & config",
   },
 ];
 
@@ -111,7 +125,7 @@ export default function Sidebar() {
           AgentFromScratch v0.1
         </div>
         <div className="text-[10px] text-muted-foreground/30 font-mono">
-          Python 3.12 · uv runtime
+          Python 3.13 · uv runtime
         </div>
       </div>
     </aside>

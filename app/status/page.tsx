@@ -2,28 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Activity, RefreshCw, Clock, Cpu } from "lucide-react";
+import { Activity, RefreshCw, Clock, Cpu, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
-
-interface RunEntry {
-  run_id?: string;
-  status?: string;
-  started_at?: string;
-  completed_at?: string;
-  intent?: string;
-  action?: string;
-  events?: Array<{ event: string; ts: string; detail?: unknown }>;
-  steps?: Array<{ step: string; result?: unknown }>;
-  [key: string]: unknown;
-}
-
-interface StatusData {
-  runs?: RunEntry[];
-  latest?: RunEntry;
-  error?: string;
-  raw?: string;
-}
+import { getEventClasses } from "@/lib/auditColors";
+import type { RunEntry, StatusData } from "@/lib/types";
 
 function timeAgo(ts: string) {
   const diff = Date.now() - new Date(ts).getTime();
@@ -32,6 +15,159 @@ function timeAgo(ts: string) {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
   return `${Math.floor(m / 60)}h ago`;
+}
+
+function duration(started?: string, completed?: string): string | null {
+  if (!started) return null;
+  const end = completed ? new Date(completed).getTime() : Date.now();
+  const ms = end - new Date(started).getTime();
+  if (ms < 0) return null;
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function EventRow({ ev }: { ev: { event: string; ts?: string; detail?: unknown } }) {
+  const [open, setOpen] = useState(false);
+  const hasDetail = ev.detail != null && (typeof ev.detail !== "object" || Object.keys(ev.detail as object).length > 0);
+
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-2 text-xs">
+        <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-primary/60" />
+        <span className={`inline-flex px-1.5 py-0.5 rounded border text-[10px] font-mono font-medium ${getEventClasses(ev.event)}`}>
+          {ev.event}
+        </span>
+        <span className="text-muted-foreground/50 ml-auto font-mono">{ev.ts ? timeAgo(ev.ts) : "—"}</span>
+        {hasDetail && (
+          <button
+            type="button"
+            aria-label="Toggle event detail"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            className="text-muted-foreground hover:text-foreground flex-shrink-0"
+          >
+            {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+        )}
+      </div>
+      {open && hasDetail && (
+        <pre className="ml-5 text-[10px] font-mono text-cyan-300/60 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto leading-relaxed">
+          {JSON.stringify(ev.detail, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function StepRow({ step }: { step: { step: string; status?: string; result?: unknown; latency_ms?: number } }) {
+  const [open, setOpen] = useState(false);
+  const hasResult = step.result != null;
+
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-secondary/60 text-muted-foreground border border-border/30">
+          {step.step}
+        </span>
+        {step.status && (
+          <span className={`text-[10px] font-mono ${
+            step.status === "completed" ? "text-[oklch(0.70_0.18_145)]"
+            : step.status === "failed" ? "text-[oklch(0.65_0.22_25)]"
+            : "text-muted-foreground/60"
+          }`}>
+            {step.status}
+          </span>
+        )}
+        {step.latency_ms != null && (
+          <span className="text-[10px] font-mono text-muted-foreground/50">{step.latency_ms}ms</span>
+        )}
+        {hasResult && (
+          <button
+            type="button"
+            aria-label="Toggle step result"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            className="text-[10px] text-muted-foreground hover:text-foreground font-mono"
+          >
+            {open ? "▲ result" : "▼ result"}
+          </button>
+        )}
+      </div>
+      {open && hasResult && (
+        <pre className="text-[10px] font-mono text-cyan-300/60 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto leading-relaxed">
+          {JSON.stringify(step.result, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function RunCard({ run }: { run: RunEntry }) {
+  const dur = duration(run.started_at, run.completed_at);
+
+  return (
+    <div className="glass rounded-xl p-4 space-y-3">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <StatusBadge status={run.status ?? "unknown"} />
+            <span className="text-xs font-mono text-muted-foreground truncate">
+              {run.run_id ?? "—"}
+            </span>
+          </div>
+          {run.intent && (
+            <p className="text-sm text-foreground">{run.intent}</p>
+          )}
+        </div>
+        <div className="flex-shrink-0 text-right text-xs text-muted-foreground space-y-0.5">
+          {run.started_at && (
+            <div className="flex items-center gap-1 justify-end">
+              <Clock className="w-3 h-3" />
+              {timeAgo(run.started_at)}
+            </div>
+          )}
+          {dur && (
+            <div className="font-mono text-[10px] text-muted-foreground/60">
+              {dur}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Action */}
+      {run.action && (
+        <div className="px-3 py-2 rounded-md bg-black/30 border border-border/30">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Action · </span>
+          <span className="text-xs font-mono text-[oklch(0.75_0.18_200)]">{run.action}</span>
+        </div>
+      )}
+
+      {/* Events timeline */}
+      {run.events && run.events.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Events</div>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {run.events.map((ev, i) => (
+              <EventRow key={i} ev={ev} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Steps */}
+      {run.steps && run.steps.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Steps</div>
+          <div className="space-y-1.5">
+            {run.steps.map((step, i) => (
+              <StepRow key={i} step={step} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function StatusPage() {
@@ -54,9 +190,7 @@ export default function StatusPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -86,6 +220,7 @@ export default function StatusPage() {
             variant="ghost"
             size="sm"
             onClick={() => setAutoRefresh((a) => !a)}
+            aria-label={autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh"}
             className={`text-xs gap-1.5 ${autoRefresh ? "text-[oklch(0.70_0.18_145)]" : "text-muted-foreground"}`}
           >
             <div className={`w-1.5 h-1.5 rounded-full ${autoRefresh ? "bg-[oklch(0.70_0.18_145)] animate-pulse" : "bg-muted-foreground"}`} />
@@ -117,67 +252,9 @@ export default function StatusPage() {
             key={run.run_id ?? idx}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.05 }}
-            className="glass rounded-xl p-4 space-y-3"
+            transition={{ delay: Math.min(idx * 0.05, 0.3) }}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <StatusBadge status={run.status ?? "unknown"} />
-                  <span className="text-xs font-mono text-muted-foreground truncate">
-                    {run.run_id ?? "—"}
-                  </span>
-                </div>
-                {run.intent && (
-                  <p className="text-sm text-foreground">{run.intent}</p>
-                )}
-              </div>
-              <div className="flex-shrink-0 text-right text-xs text-muted-foreground space-y-0.5">
-                {run.started_at && (
-                  <div className="flex items-center gap-1 justify-end">
-                    <Clock className="w-3 h-3" />
-                    {timeAgo(run.started_at)}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {run.action && (
-              <div className="px-3 py-2 rounded-md bg-black/30 border border-border/30">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Action · </span>
-                <span className="text-xs font-mono text-[oklch(0.75_0.18_200)]">{run.action}</span>
-              </div>
-            )}
-
-            {/* Events timeline */}
-            {run.events && run.events.length > 0 && (
-              <div className="space-y-1.5">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Events</div>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {run.events.map((ev, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary/60 flex-shrink-0" />
-                      <span className="font-mono text-[oklch(0.72_0.19_280)]">{ev.event}</span>
-                      <span className="text-muted-foreground/50 ml-auto">{timeAgo(ev.ts)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Steps */}
-            {run.steps && run.steps.length > 0 && (
-              <div className="space-y-1.5">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Steps</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {run.steps.map((step, i) => (
-                    <span key={i} className="text-xs font-mono px-2 py-0.5 rounded-full bg-secondary/60 text-muted-foreground border border-border/30">
-                      {step.step}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+            <RunCard run={run} />
           </motion.div>
         ))}
       </div>
