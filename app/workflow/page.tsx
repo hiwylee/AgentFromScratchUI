@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { GitBranch, Play, Loader2, CheckCircle2, Circle, AlertCircle, Clock } from "lucide-react";
+import { GitBranch, Play, Loader2, CheckCircle2, Circle, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -75,6 +75,142 @@ function mapResultToSteps(result: WorkflowResult): Record<string, StepState> {
   return states;
 }
 
+interface ApprovalContext {
+  step: string;
+  prompt: string;
+  data?: unknown;
+}
+
+function HumanDecisionGate({
+  runId,
+  context,
+  onDecision,
+}: {
+  runId: string;
+  context: ApprovalContext;
+  onDecision: (decision: "approve" | "reject" | "skip", reason?: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState<"approve" | "reject" | "skip" | null>(null);
+  const [dataExpanded, setDataExpanded] = useState(false);
+
+  async function submit(decision: "approve" | "reject" | "skip") {
+    if (submitting) return;
+    setSubmitting(decision);
+    try {
+      const res = await fetch("/api/agent/workflow/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: runId, decision, reason: reason.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        toast.error(`Approval failed: ${err.error ?? res.statusText}`);
+        return;
+      }
+      toast.success(`Decision submitted: ${decision}`);
+      onDecision(decision, reason.trim() || undefined);
+    } catch (err) {
+      toast.error(`Failed to submit decision: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
+  const busy = submitting !== null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="rounded-xl border bg-secondary/10 backdrop-blur-sm p-5 space-y-4"
+      style={{ borderColor: "oklch(0.80 0.18 80 / 0.6)" }}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="text-[10px] px-2 py-0.5 rounded-full border font-mono font-semibold tracking-widest animate-pulse"
+          style={{
+            borderColor: "oklch(0.80 0.18 80 / 0.5)",
+            color: "oklch(0.80 0.18 80)",
+            backgroundColor: "oklch(0.70 0.18 80 / 0.1)",
+          }}
+        >
+          CHECKPOINT
+        </span>
+        <span className="font-mono text-sm" style={{ color: "oklch(0.80 0.18 80)" }}>
+          {context.step}
+        </span>
+      </div>
+
+      <p className="text-base text-foreground leading-relaxed">{context.prompt}</p>
+
+      {context.data != null && (
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => setDataExpanded((v) => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Toggle approval data"
+          >
+            {dataExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            Approval data
+          </button>
+          {dataExpanded && (
+            <pre className="text-xs font-mono text-cyan-300/70 bg-black/20 px-3 py-2 rounded border border-border/20 overflow-x-auto">
+              {JSON.stringify(context.data, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+
+      <Textarea
+        aria-label="Approval reason or comment"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Optional reason or comment…"
+        className="min-h-[60px] resize-none bg-input/40 border-border/40 text-sm placeholder:text-muted-foreground/40"
+        disabled={busy}
+      />
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Approve workflow step"
+          disabled={busy}
+          onClick={() => submit("approve")}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white transition-opacity disabled:opacity-50"
+          style={{ backgroundColor: "oklch(0.70 0.18 145)" }}
+        >
+          {submitting === "approve" ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>✓</span>}
+          Approve
+        </button>
+        <button
+          type="button"
+          aria-label="Reject workflow step"
+          disabled={busy}
+          onClick={() => submit("reject")}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white transition-opacity disabled:opacity-50"
+          style={{ backgroundColor: "oklch(0.65 0.22 25)" }}
+        >
+          {submitting === "reject" ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>✗</span>}
+          Reject
+        </button>
+        <button
+          type="button"
+          aria-label="Skip workflow step"
+          disabled={busy}
+          onClick={() => submit("skip")}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-muted-foreground border border-border/50 hover:border-border hover:text-foreground transition-colors disabled:opacity-50"
+        >
+          {submitting === "skip" ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>→</span>}
+          Skip
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 function WorkflowErrorBlock({ result }: { result: WorkflowResult }) {
   const err = parseError(result);
   if (!err) return null;
@@ -123,6 +259,7 @@ export default function WorkflowPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WorkflowResult | null>(null);
   const [stepStates, setStepStates] = useState<Record<string, StepState>>({});
+  const [approvalPending, setApprovalPending] = useState(false);
 
   async function handleRun() {
     const text = query.trim();
@@ -142,10 +279,13 @@ export default function WorkflowPage() {
       const data: WorkflowResult = await res.json();
       setResult(data);
       setStepStates(mapResultToSteps(data));
+      if (data.approval_context) {
+        setApprovalPending(true);
+      }
       if (data.error) {
         const err = parseError(data);
         toast.error(err?.isKnown ? `[${err.code}] ${err.message}` : `Workflow error: ${data.error}`);
-      } else {
+      } else if (!data.approval_context) {
         toast.success("Workflow completed");
       }
     } catch (err) {
@@ -155,6 +295,11 @@ export default function WorkflowPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDecision(_decision: "approve" | "reject" | "skip", _reason?: string) {
+    setApprovalPending(false);
+    setResult((prev) => (prev ? { ...prev, approval_context: undefined } : prev));
   }
 
   const hasResult = result !== null;
@@ -177,6 +322,7 @@ export default function WorkflowPage() {
         <div className="glass rounded-xl p-4 space-y-3">
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Workflow Request</div>
           <Textarea
+            aria-label="Workflow request input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Describe the workflow to run… e.g. 이번달 특허자산 대체 등록 진행해줘"
@@ -185,6 +331,8 @@ export default function WorkflowPage() {
           />
           <div className="flex items-center gap-2 flex-wrap">
             <Button
+              type="button"
+              aria-label={loading ? "Agent processing" : "Run workflow"}
               onClick={handleRun}
               disabled={!query.trim() || loading}
               className="gap-2 bg-primary hover:bg-primary/80 glow-purple"
@@ -197,6 +345,7 @@ export default function WorkflowPage() {
                 <button
                   key={ex}
                   type="button"
+                  aria-label={`Use example: ${ex}`}
                   onClick={() => setQuery(ex)}
                   disabled={loading}
                   className="text-sm px-2 py-1 rounded-md border border-border/40 text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors"
@@ -329,6 +478,17 @@ export default function WorkflowPage() {
             </div>
           )}
         </div>
+
+        {/* Human Decision Gate */}
+        <AnimatePresence>
+          {approvalPending && result?.approval_context && result?.run_id && (
+            <HumanDecisionGate
+              runId={result.run_id}
+              context={result.approval_context as ApprovalContext}
+              onDecision={handleDecision}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Result */}
         <AnimatePresence>
