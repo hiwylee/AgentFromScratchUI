@@ -2,36 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Database, RefreshCw, Table2, Hash, Star, BookOpen } from "lucide-react";
+import { Database, RefreshCw, Table2, Hash, Star, BookOpen, AlertTriangle, Loader2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { TableEntry, GlossaryMatch, SchemaContext } from "@/lib/types";
 
 // Oracle ADW Schema Inspector
 // Reads from the last schema inspection stored in the audit log or run artifacts
-
-interface TableEntry {
-  name: string;
-  score?: number;
-  columns?: string[];
-  description?: string;
-  row_count?: number;
-}
-
-interface GlossaryMatch {
-  term: string;
-  definition?: string;
-  score?: number;
-}
-
-interface SchemaContext {
-  selected_tables?: TableEntry[];
-  glossary_matches?: GlossaryMatch[];
-  query?: string;
-  schema_name?: string;
-  inspected_at?: string;
-  total_tables?: number;
-  error?: string;
-}
 
 const MOCK_SCHEMA: SchemaContext = {
   schema_name: "ADWC_PROD",
@@ -85,6 +62,8 @@ export default function SchemaPage() {
   const [loading, setLoading] = useState(false);
   const [selectedTable, setSelectedTable] = useState<TableEntry | null>(null);
   const [useMock, setUseMock] = useState(false);
+  const [smokeLoading, setSmokeLoading] = useState(false);
+  const [smokeOk, setSmokeOk] = useState<boolean | null>(null);
 
   const fetchSchema = useCallback(async () => {
     setLoading(true);
@@ -116,6 +95,26 @@ export default function SchemaPage() {
     }
   }, []);
 
+  const handleSmokeAndRefresh = useCallback(async () => {
+    setSmokeLoading(true);
+    setSmokeOk(null);
+    try {
+      const res = await fetch("/api/agent/operator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adw-smoke" }),
+      });
+      const data = await res.json();
+      const ok = data.status === "ok" || data.status === "passed";
+      setSmokeOk(ok);
+      if (ok) await fetchSchema();
+    } catch {
+      setSmokeOk(false);
+    } finally {
+      setSmokeLoading(false);
+    }
+  }, [fetchSchema]);
+
   useEffect(() => { fetchSchema(); }, [fetchSchema]);
 
   const tables = schema?.selected_tables ?? [];
@@ -138,11 +137,35 @@ export default function SchemaPage() {
             </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchSchema} disabled={loading} className="gap-1.5 text-xs">
-          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="스키마 갱신 요청"
+            onClick={handleSmokeAndRefresh}
+            disabled={smokeLoading || loading}
+            className="gap-1.5 text-xs"
+            style={smokeOk === true ? { borderColor: "oklch(0.70 0.18 145 / 0.5)", color: "oklch(0.70 0.18 145)" }
+                 : smokeOk === false ? { borderColor: "oklch(0.65 0.22 25 / 0.5)", color: "oklch(0.65 0.22 25)" }
+                 : {}}
+          >
+            {smokeLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+            스키마 갱신
+          </Button>
+          <Button type="button" variant="outline" size="sm" aria-label="Refresh" onClick={() => { setSmokeOk(null); fetchSchema(); }} disabled={loading} className="gap-1.5 text-xs">
+            <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      {useMock && (
+        <div role="alert" className="px-6 py-2 flex items-center gap-2 text-xs border-b border-[oklch(0.78_0.18_80/0.3)] bg-[oklch(0.78_0.18_80/0.06)]" style={{ color: "oklch(0.80 0.18 80)" }}>
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>실제 스키마 데이터 없음 — 미리보기 데이터 표시 중. &quot;스키마 갱신&quot;을 실행하면 실제 ADW 연결을 시도합니다.</span>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden flex">
         {/* Left: Tables */}

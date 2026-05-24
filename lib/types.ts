@@ -114,6 +114,8 @@ export interface AgentResult {
   status_path?: string;
   events_path?: string;
   audit_path?: string;
+  // Suggestions
+  suggested_queries?: string[];
   // Error
   error?: string;
   error_code?: string;
@@ -212,4 +214,29 @@ export interface StructuredError {
   step?: string;
   supported?: string[];
   isKnown: boolean;
+}
+
+// ── Schema Inspector ───────────────────────────────────────────────
+export interface TableEntry {
+  name: string;
+  score?: number;
+  columns?: string[];
+  description?: string;
+  row_count?: number;
+}
+
+export interface GlossaryMatch {
+  term: string;
+  definition?: string;
+  score?: number;
+}
+
+export interface SchemaContext {
+  selected_tables?: TableEntry[];
+  glossary_matches?: GlossaryMatch[];
+  query?: string;
+  schema_name?: string;
+  inspected_at?: string;
+  total_tables?: number;
+  error?: string;
 }

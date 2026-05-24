@@ -34,6 +34,8 @@ function JsonBlock({ data }: { data: unknown }) {
   return (
     <div className="mt-3 rounded-md border border-border/50 overflow-hidden">
       <button
+        type="button"
+        aria-label="Toggle raw JSON"
         onClick={() => setCollapsed((c) => !c)}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-mono text-muted-foreground hover:text-foreground bg-secondary/30 hover:bg-secondary/50 transition-colors text-left"
       >
@@ -71,6 +73,7 @@ function EvalBadge({ evalResult }: { evalResult: EvalResult }) {
   return (
     <div className="glass rounded-md px-3 py-2 space-y-1.5">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label="Toggle eval details"
@@ -200,6 +203,7 @@ function PlanBlock({ plan }: { plan: PlanResult }) {
   return (
     <div className="glass rounded-md px-3 py-2 space-y-1.5">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label="Toggle plan details"
@@ -277,6 +281,7 @@ function MemorySummaryBlock({ memorySummary }: { memorySummary: string | Record<
   return (
     <div className="glass rounded-md px-3 py-2 space-y-1.5">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label="Toggle memory details"
@@ -356,8 +361,10 @@ function ClarificationBlock({
           className="flex-1 min-w-0 text-xs h-7 px-2 rounded border border-border/40 bg-input/40 font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50"
         />
         <Button
+          type="button"
           size="sm"
           variant="outline"
+          aria-label="전송"
           className="text-xs h-7 px-3"
           onClick={() => { if (custom.trim()) { onSelect(custom.trim()); setCustom(""); }}}
         >
@@ -384,6 +391,8 @@ function ErrorCard({ error }: { error: string }) {
       </pre>
       {isLong && (
         <button
+          type="button"
+          aria-label="Toggle full error"
           onClick={() => setExpanded((e) => !e)}
           className="w-full text-center text-xs text-muted-foreground hover:text-foreground py-1 border-t border-destructive/20 transition-colors"
         >
@@ -494,6 +503,54 @@ const SUGGESTED = [
   "Run a workflow for Q1 sales reconciliation",
   "Check the status of the latest agent run",
 ];
+
+function getSuggestionsFromResult(result?: AgentResult): string[] {
+  if (!result) return [];
+  const suggestions: string[] = [];
+  const nextAction = result.final_answer?.next_action ?? result.intent?.next_action;
+  if (nextAction && typeof nextAction === "string" && nextAction.trim()) {
+    suggestions.push(nextAction.trim());
+  }
+  if (Array.isArray(result.suggested_queries)) {
+    for (const s of result.suggested_queries) {
+      if (typeof s === "string" && s.trim()) suggestions.push(s.trim());
+    }
+  }
+  return [...new Set(suggestions)].slice(0, 4);
+}
+
+function DynamicSuggestions({
+  result,
+  onSelect,
+}: {
+  result?: AgentResult;
+  onSelect: (query: string) => void;
+}) {
+  const fromApi = getSuggestionsFromResult(result);
+  const items = fromApi.length > 0 ? fromApi : SUGGESTED.slice(0, 4);
+  const isApi = fromApi.length > 0;
+
+  return (
+    <div className="flex flex-col gap-2 mt-3">
+      <div className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-widest">
+        {isApi ? "Agent 제안" : "예시 질문"}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((s) => (
+          <button
+            key={s}
+            type="button"
+            aria-label={`Ask: ${s}`}
+            onClick={() => onSelect(s)}
+            className="text-sm px-3 py-1.5 rounded-lg glass border border-border/40 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-150 text-left"
+          >
+            {s.length > 60 ? s.slice(0, 60) + "…" : s}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ── Message type ──────────────────────────────────────────────────
 
@@ -612,6 +669,8 @@ export default function ChatPage() {
                 {SUGGESTED.map((s) => (
                   <button
                     key={s}
+                    type="button"
+                    aria-label={`Ask: ${s}`}
                     onClick={() => handleSubmit(s)}
                     className="text-left text-sm px-3 py-3 rounded-lg glass border border-border/40 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-150"
                   >
@@ -622,7 +681,7 @@ export default function ChatPage() {
             </motion.div>
           )}
 
-          {messages.map((msg) => (
+          {messages.map((msg, idx) => (
             <motion.div
               key={msg.id}
               initial={{ opacity: 0, y: 10 }}
@@ -656,6 +715,9 @@ export default function ChatPage() {
                 <span className="text-xs text-muted-foreground/50 mt-1 px-1 font-mono">
                   {new Date(msg.ts).toLocaleTimeString()}
                 </span>
+                {msg.role === "assistant" && idx === messages.length - 1 && !loading && (
+                  <DynamicSuggestions result={msg.result} onSelect={handleSubmit} />
+                )}
               </div>
               {msg.role === "user" && (
                 <div className="w-7 h-7 rounded-md bg-secondary flex items-center justify-center flex-shrink-0 mt-0.5">
