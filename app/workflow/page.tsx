@@ -5,24 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GitBranch, Play, Loader2, CheckCircle2, Circle, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { parseError } from "@/lib/errors";
-import type { WorkflowResult } from "@/lib/types";
-
-const WORKFLOW_STEPS = [
-  { id: "ab_lookup", label: "A/B Lookup", description: "Source data extraction" },
-  { id: "c_enrichment", label: "C Enrichment", description: "Data enrichment & joining" },
-  { id: "reconciliation", label: "Reconciliation", description: "Cross-validation & diff" },
-  { id: "human_review", label: "Human Review", description: "Checkpoint gate" },
-  { id: "d_loading", label: "D Loading", description: "Target load & commit" },
-];
-
-type StepStatus = "pending" | "running" | "completed" | "failed" | "skipped";
-
-interface StepState {
-  status: StepStatus;
-  result?: unknown;
-}
+import type { WorkflowResult, HumanGate } from "@/lib/types";
 
 const STEP_EXAMPLES = [
   "이번달 특허자산 대체 등록 진행해줘",
@@ -30,94 +16,87 @@ const STEP_EXAMPLES = [
   "특허자산 대체 등록 처리 시작해줘",
 ];
 
+type StepStatus = "pending" | "running" | "completed" | "failed" | "skipped" | "paused";
+
+function normalizeStatus(s?: string): StepStatus {
+  if (!s) return "pending";
+  if (s === "paused" || s === "checkpoint_required") return "paused";
+  if (["running", "completed", "failed", "skipped", "pending"].includes(s)) return s as StepStatus;
+  return "pending";
+}
+
 function StepIcon({ status }: { status: StepStatus }) {
   if (status === "completed") return <CheckCircle2 className="w-4 h-4 text-[oklch(0.70_0.18_145)]" />;
   if (status === "running") return <Loader2 className="w-4 h-4 text-[oklch(0.65_0.22_200)] animate-spin" />;
   if (status === "failed") return <AlertCircle className="w-4 h-4 text-[oklch(0.65_0.22_25)]" />;
+  if (status === "paused") return <Clock className="w-4 h-4 text-[oklch(0.80_0.18_80)] animate-pulse" />;
   if (status === "skipped") return <Clock className="w-4 h-4 text-muted-foreground/40" />;
   return <Circle className="w-4 h-4 text-muted-foreground/60" />;
 }
 
-function mapResultToSteps(result: WorkflowResult): Record<string, StepState> {
-  const states: Record<string, StepState> = {};
-  for (const s of WORKFLOW_STEPS) {
-    states[s.id] = { status: "pending" };
-  }
-
-  if (result.steps && Array.isArray(result.steps)) {
-    for (const step of result.steps) {
-      const matched = WORKFLOW_STEPS.find(
-        (s) => s.id === step.name || s.label.toLowerCase() === step.name?.toLowerCase()
-      );
-      if (matched) {
-        states[matched.id] = {
-          status: (step.status as StepStatus) ?? "completed",
-          result: step.result,
-        };
-      }
-    }
-  } else if (result.current_step) {
-    const idx = WORKFLOW_STEPS.findIndex(
-      (s) => s.id === result.current_step || s.label === result.current_step
-    );
-    for (let i = 0; i < WORKFLOW_STEPS.length; i++) {
-      if (i < idx) states[WORKFLOW_STEPS[i].id] = { status: "completed" };
-      else if (i === idx) states[WORKFLOW_STEPS[i].id] = { status: "running" };
-    }
-  }
-
-  if (result.status === "completed") {
-    for (const s of WORKFLOW_STEPS) {
-      if (states[s.id].status === "pending") states[s.id] = { status: "completed" };
-    }
-  }
-
-  return states;
+function stepBorderColor(status: StepStatus): string {
+  if (status === "completed") return "border-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.15)]";
+  if (status === "running") return "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]";
+  if (status === "failed") return "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]";
+  if (status === "paused") return "border-[oklch(0.80_0.18_80)] bg-[oklch(0.70_0.18_80/0.15)]";
+  return "border-border/50 bg-secondary/30";
 }
 
-interface ApprovalContext {
-  step: string;
-  prompt: string;
-  data?: unknown;
+function stepTextColor(status: StepStatus): string {
+  if (status === "completed") return "text-[oklch(0.70_0.18_145)]";
+  if (status === "running") return "text-[oklch(0.65_0.22_200)]";
+  if (status === "failed") return "text-[oklch(0.65_0.22_25)]";
+  if (status === "paused") return "text-[oklch(0.80_0.18_80)]";
+  return "text-foreground/80";
 }
+
+// ── HumanDecisionGate ─────────────────────────────────────────────
 
 function HumanDecisionGate({
   runId,
-  context,
+  humanGate,
   onDecision,
 }: {
   runId: string;
-  context: ApprovalContext;
-  onDecision: (decision: "approve" | "reject" | "skip", reason?: string) => void;
+  humanGate: HumanGate;
+  onDecision: (result: WorkflowResult) => void;
 }) {
+  const [actor, setActor] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState<"approve" | "reject" | "skip" | null>(null);
-  const [dataExpanded, setDataExpanded] = useState(false);
+  const [packetExpanded, setPacketExpanded] = useState(false);
+
+  const packet = humanGate.review_packet;
+  const checkpoint = packet?.trusted_checkpoint;
+  const busy = submitting !== null;
 
   async function submit(decision: "approve" | "reject" | "skip") {
-    if (submitting) return;
+    if (busy) return;
     setSubmitting(decision);
     try {
       const res = await fetch("/api/agent/workflow/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId, decision, reason: reason.trim() || undefined }),
+        body: JSON.stringify({
+          run_id: runId,
+          decision,
+          actor: actor.trim() || undefined,
+          reason: reason.trim() || undefined,
+        }),
       });
+      const data: WorkflowResult = await res.json();
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Unknown error" }));
-        toast.error(`Approval failed: ${err.error ?? res.statusText}`);
+        toast.error(`Decision failed: ${(data as Record<string, unknown>).error ?? res.statusText}`);
         return;
       }
       toast.success(`Decision submitted: ${decision}`);
-      onDecision(decision, reason.trim() || undefined);
+      onDecision(data);
     } catch (err) {
-      toast.error(`Failed to submit decision: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSubmitting(null);
     }
   }
-
-  const busy = submitting !== null;
 
   return (
     <motion.div
@@ -139,55 +118,100 @@ function HumanDecisionGate({
           CHECKPOINT
         </span>
         <span className="font-mono text-sm" style={{ color: "oklch(0.80 0.18 80)" }}>
-          {context.step}
+          pre_load_checkpoint
         </span>
       </div>
 
-      <p className="text-base text-foreground leading-relaxed">{context.prompt}</p>
+      {/* Affected records */}
+      {packet?.affected_records && packet.affected_records.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground/70 font-mono uppercase tracking-widest">Affected Records</div>
+          <div className="flex flex-wrap gap-1.5">
+            {packet.affected_records.map((id) => (
+              <span key={id} className="text-xs font-mono px-2 py-0.5 rounded bg-secondary/60 text-cyan-300/80">
+                {id}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
-      {context.data != null && (
+      {/* Proposed resolution */}
+      {packet?.proposed_resolution && (
+        <p className="text-sm text-foreground/80 leading-relaxed">{packet.proposed_resolution}</p>
+      )}
+
+      {/* Approval impact */}
+      {packet?.approval_impact && (
+        <p className="text-sm text-muted-foreground leading-relaxed">{packet.approval_impact}</p>
+      )}
+
+      {/* Review packet details */}
+      {packet && (
         <div className="space-y-1">
           <button
             type="button"
-            onClick={() => setDataExpanded((v) => !v)}
+            onClick={() => setPacketExpanded((v) => !v)}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Toggle approval data"
+            aria-label="Toggle review packet"
           >
-            {dataExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            Approval data
+            {packetExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            Review packet
           </button>
-          {dataExpanded && (
+          {packetExpanded && (
             <pre className="text-xs font-mono text-cyan-300/70 bg-black/20 px-3 py-2 rounded border border-border/20 overflow-x-auto">
-              {JSON.stringify(context.data, null, 2)}
+              {JSON.stringify(packet, null, 2)}
             </pre>
           )}
         </div>
       )}
 
-      <Textarea
-        aria-label="Approval reason or comment"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Optional reason or comment…"
-        className="min-h-[60px] resize-none bg-input/40 border-border/40 text-sm placeholder:text-muted-foreground/40"
-        disabled={busy}
-      />
+      {/* Checkpoint identity */}
+      {checkpoint?.identity && (
+        <div className="rounded-md border border-border/30 bg-black/20 px-3 py-2 space-y-1">
+          <div className="text-[10px] font-mono text-muted-foreground/60 uppercase tracking-widest">Checkpoint</div>
+          <div className="text-xs font-mono text-cyan-300/70 break-all">{checkpoint.identity}</div>
+          {checkpoint.hash && (
+            <div className="text-[10px] font-mono text-muted-foreground/50 break-all">hash: {checkpoint.hash}</div>
+          )}
+        </div>
+      )}
 
-      <div className="flex items-center gap-2">
+      {/* Actor + reason */}
+      <div className="space-y-2">
+        <Input
+          aria-label="Reviewer name"
+          value={actor}
+          onChange={(e) => setActor(e.target.value)}
+          placeholder="Reviewer name (optional)"
+          className="font-mono text-sm bg-input/40 border-border/40 placeholder:text-muted-foreground/40"
+          disabled={busy}
+        />
+        <Textarea
+          aria-label="Approval reason or comment"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reason or comment (optional)…"
+          className="min-h-[60px] resize-none bg-input/40 border-border/40 text-sm placeholder:text-muted-foreground/40"
+          disabled={busy}
+        />
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          aria-label="Approve workflow step"
+          aria-label="Approve workflow checkpoint"
           disabled={busy}
           onClick={() => submit("approve")}
           className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white transition-opacity disabled:opacity-50"
           style={{ backgroundColor: "oklch(0.70 0.18 145)" }}
         >
           {submitting === "approve" ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>✓</span>}
-          Approve
+          Approve Load
         </button>
         <button
           type="button"
-          aria-label="Reject workflow step"
+          aria-label="Reject workflow"
           disabled={busy}
           onClick={() => submit("reject")}
           className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white transition-opacity disabled:opacity-50"
@@ -198,18 +222,20 @@ function HumanDecisionGate({
         </button>
         <button
           type="button"
-          aria-label="Skip workflow step"
+          aria-label="Request manual correction"
           disabled={busy}
           onClick={() => submit("skip")}
           className="flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-muted-foreground border border-border/50 hover:border-border hover:text-foreground transition-colors disabled:opacity-50"
         >
           {submitting === "skip" ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>→</span>}
-          Skip
+          Request Correction
         </button>
       </div>
     </motion.div>
   );
 }
+
+// ── Error block ───────────────────────────────────────────────────
 
 function WorkflowErrorBlock({ result }: { result: WorkflowResult }) {
   const err = parseError(result);
@@ -239,9 +265,7 @@ function WorkflowErrorBlock({ result }: { result: WorkflowResult }) {
         </div>
       ) : (
         <div className="space-y-1">
-          <div className="text-sm font-mono text-destructive/90">
-            [{err.code}] {err.message}
-          </div>
+          <div className="text-sm font-mono text-destructive/90">[{err.code}] {err.message}</div>
           {err.step && (
             <div className="text-xs text-muted-foreground">Step: <span className="font-mono">{err.step}</span></div>
           )}
@@ -254,21 +278,23 @@ function WorkflowErrorBlock({ result }: { result: WorkflowResult }) {
   );
 }
 
+// ── WorkflowPage ──────────────────────────────────────────────────
+
 export default function WorkflowPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WorkflowResult | null>(null);
-  const [stepStates, setStepStates] = useState<Record<string, StepState>>({});
-  const [approvalPending, setApprovalPending] = useState(false);
+
+  const checkpointPending =
+    result?.human_gate?.state === "checkpoint_required" ||
+    result?.human_gate?.state === "paused" ||
+    !!result?.approval_context;  // legacy compat
 
   async function handleRun() {
     const text = query.trim();
     if (!text || loading) return;
     setLoading(true);
     setResult(null);
-    const initial: Record<string, StepState> = {};
-    for (const s of WORKFLOW_STEPS) initial[s.id] = { status: "pending" };
-    setStepStates(initial);
 
     try {
       const res = await fetch("/api/agent/workflow", {
@@ -278,31 +304,34 @@ export default function WorkflowPage() {
       });
       const data: WorkflowResult = await res.json();
       setResult(data);
-      setStepStates(mapResultToSteps(data));
-      if (data.approval_context) {
-        setApprovalPending(true);
-      }
-      if (data.error) {
+
+      if (data.error && data.state !== "checkpoint_required") {
         const err = parseError(data);
         toast.error(err?.isKnown ? `[${err.code}] ${err.message}` : `Workflow error: ${data.error}`);
-      } else if (!data.approval_context) {
+      } else if (data.human_gate?.state === "checkpoint_required") {
+        toast("Checkpoint reached — review required", { icon: "⚠" });
+      } else if (!data.error) {
         toast.success("Workflow completed");
       }
     } catch (err) {
       toast.error("Failed to reach workflow API");
-      const errResult: WorkflowResult = { error: err instanceof Error ? err.message : String(err) };
-      setResult(errResult);
+      setResult({ error: err instanceof Error ? err.message : String(err) });
     } finally {
       setLoading(false);
     }
   }
 
-  function handleDecision(_decision: "approve" | "reject" | "skip", _reason?: string) {
-    setApprovalPending(false);
-    setResult((prev) => (prev ? { ...prev, approval_context: undefined } : prev));
+  function handleDecision(resumeResult: WorkflowResult) {
+    setResult(resumeResult);
+    if (resumeResult.state === "closed" || resumeResult.state === "completed") {
+      toast.success("Workflow completed after decision");
+    } else if (resumeResult.state === "failed") {
+      toast.error("Workflow rejected");
+    }
   }
 
-  const hasResult = result !== null;
+  const steps = result?.steps ?? [];
+  const hasSteps = steps.length > 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -318,6 +347,7 @@ export default function WorkflowPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
         {/* Input card */}
         <div className="glass rounded-xl p-4 space-y-3">
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Workflow Request</div>
@@ -325,7 +355,7 @@ export default function WorkflowPage() {
             aria-label="Workflow request input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Describe the workflow to run… e.g. 이번달 특허자산 대체 등록 진행해줘"
+            placeholder="이번달 특허자산 대체 등록 진행해줘"
             className="min-h-[80px] resize-none bg-input/40 border-border/40 font-mono text-sm placeholder:text-muted-foreground/40"
             disabled={loading}
           />
@@ -360,60 +390,60 @@ export default function WorkflowPage() {
           </div>
         </div>
 
-        {/* State machine diagram */}
+        {/* Pipeline steps */}
         <div className="glass rounded-xl p-5 space-y-4">
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Pipeline State</div>
 
-          {/* Pre-run placeholder */}
-          {!hasResult && (
+          {!result && (
             <div className="flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground/60">
               <GitBranch className="w-6 h-6" />
               <p className="text-xs text-center">워크플로우를 실행하면<br/>실제 스텝이 여기에 표시됩니다</p>
             </div>
           )}
 
-          {/* Dynamic steps from backend result.steps[] */}
-          {hasResult && result?.steps && Array.isArray(result.steps) && result.steps.length > 0 && (
+          {result && hasSteps && (
             <div className="flex flex-col gap-0">
-              {result.steps.map((step, idx) => {
-                const isLast = idx === (result.steps?.length ?? 0) - 1;
-                const stepStatus = (step.status as StepStatus) ?? "completed";
+              {steps.map((step, idx) => {
+                const isLast = idx === steps.length - 1;
+                const label = step.step_id ?? step.name ?? `step-${idx + 1}`;
+                const status = normalizeStatus(step.state ?? step.status);
                 return (
-                  <div key={step.name ?? idx} className="flex gap-4">
+                  <div key={label} className="flex gap-4">
                     <div className="flex flex-col items-center flex-shrink-0">
-                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
-                        stepStatus === "completed" ? "border-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.15)]"
-                        : stepStatus === "running" ? "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]"
-                        : stepStatus === "failed" ? "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]"
-                        : "border-border/50 bg-secondary/30"
-                      }`}>
-                        <StepIcon status={stepStatus} />
+                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${stepBorderColor(status)}`}>
+                        <StepIcon status={status} />
                       </div>
                       {!isLast && (
                         <div className={`w-0.5 h-8 transition-all duration-700 ${
-                          stepStatus === "completed" ? "bg-[oklch(0.70_0.18_145/0.5)]" : "bg-border/20"
+                          status === "completed" ? "bg-[oklch(0.70_0.18_145/0.5)]" : "bg-border/20"
                         }`} />
                       )}
                     </div>
                     <motion.div
                       className="flex-1 pb-4"
-                      animate={{ opacity: stepStatus === "pending" ? 0.75 : 1 }}
+                      animate={{ opacity: status === "pending" ? 0.65 : 1 }}
                       transition={{ duration: 0.3 }}
                     >
-                      <div className="flex items-center gap-2 mb-0.5 h-8">
-                        <span className={`text-sm font-medium ${
-                          stepStatus === "completed" ? "text-[oklch(0.70_0.18_145)]"
-                          : stepStatus === "running" ? "text-[oklch(0.65_0.22_200)]"
-                          : stepStatus === "failed" ? "text-[oklch(0.65_0.22_25)]"
-                          : "text-foreground/80"
-                        }`}>
-                          {step.name}
-                        </span>
+                      <div className="flex items-center gap-2 mb-0.5 h-8 flex-wrap">
+                        <span className={`text-sm font-medium ${stepTextColor(status)}`}>{label}</span>
+                        {step.system && (
+                          <span className="text-[10px] font-mono text-muted-foreground/50 px-1 py-0.5 rounded bg-secondary/40">
+                            {step.system}
+                          </span>
+                        )}
+                        {status === "paused" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[oklch(0.80_0.18_80/0.4)] text-[oklch(0.80_0.18_80)] bg-[oklch(0.70_0.18_80/0.1)] font-mono">
+                            checkpoint
+                          </span>
+                        )}
                       </div>
-                      {step.result != null && (
-                        <pre className="mt-2 text-xs font-mono text-cyan-300/70 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto">
-                          {JSON.stringify(step.result, null, 2)}
-                        </pre>
+                      {step.details && Object.keys(step.details).length > 0 && (
+                        <div className="text-xs font-mono text-muted-foreground/60">
+                          {Object.entries(step.details)
+                            .filter(([, v]) => v != null && typeof v !== "object")
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join(" · ")}
+                        </div>
                       )}
                     </motion.div>
                   </div>
@@ -422,69 +452,19 @@ export default function WorkflowPage() {
             </div>
           )}
 
-          {/* Fallback: hardcoded steps (when result exists but no steps[] returned) */}
-          {hasResult && (!result?.steps || result.steps.length === 0) && (
-            <div className="flex flex-col gap-0">
-              {WORKFLOW_STEPS.map((step, idx) => {
-                const state = stepStates[step.id] ?? { status: "pending" as StepStatus };
-                const isLast = idx === WORKFLOW_STEPS.length - 1;
-                return (
-                  <div key={step.id} className="flex gap-4">
-                    <div className="flex flex-col items-center flex-shrink-0">
-                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
-                        state.status === "completed" ? "border-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.15)]"
-                        : state.status === "running" ? "border-[oklch(0.65_0.22_200)] bg-[oklch(0.55_0.22_200/0.15)]"
-                        : state.status === "failed" ? "border-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.15)]"
-                        : "border-border/50 bg-secondary/30"
-                      }`}>
-                        <StepIcon status={state.status} />
-                      </div>
-                      {!isLast && (
-                        <div className={`w-0.5 h-8 transition-all duration-700 ${
-                          state.status === "completed" ? "bg-[oklch(0.70_0.18_145/0.5)]" : "bg-border/20"
-                        }`} />
-                      )}
-                    </div>
-                    <motion.div
-                      className="flex-1 pb-4"
-                      animate={{ opacity: state.status === "pending" ? 0.75 : 1 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <div className="flex items-center gap-2 mb-0.5 h-8">
-                        <span className={`text-sm font-medium ${
-                          state.status === "completed" ? "text-[oklch(0.70_0.18_145)]"
-                          : state.status === "running" ? "text-[oklch(0.65_0.22_200)]"
-                          : state.status === "failed" ? "text-[oklch(0.65_0.22_25)]"
-                          : "text-foreground/80"
-                        }`}>
-                          {step.label}
-                        </span>
-                        {step.id === "human_review" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[oklch(0.80_0.18_80/0.4)] text-[oklch(0.80_0.18_80)] bg-[oklch(0.70_0.18_80/0.1)] font-mono">
-                            checkpoint
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-muted-foreground">{step.description}</div>
-                      {state.result != null && (
-                        <pre className="mt-2 text-xs font-mono text-cyan-300/70 bg-black/20 px-2 py-1 rounded border border-border/20 overflow-x-auto">
-                          {JSON.stringify(state.result, null, 2)}
-                        </pre>
-                      )}
-                    </motion.div>
-                  </div>
-                );
-              })}
+          {result && !hasSteps && (
+            <div className="text-sm text-muted-foreground font-mono">
+              state: <span className="text-foreground/70">{result.state ?? result.status ?? "—"}</span>
             </div>
           )}
         </div>
 
         {/* Human Decision Gate */}
         <AnimatePresence>
-          {approvalPending && result?.approval_context && result?.run_id && (
+          {checkpointPending && result?.run_id && (result.human_gate || result.approval_context) && (
             <HumanDecisionGate
               runId={result.run_id}
-              context={result.approval_context as ApprovalContext}
+              humanGate={result.human_gate ?? { state: "checkpoint_required" }}
               onDecision={handleDecision}
             />
           )}
@@ -492,7 +472,7 @@ export default function WorkflowPage() {
 
         {/* Result */}
         <AnimatePresence>
-          {hasResult && (
+          {result && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -500,16 +480,17 @@ export default function WorkflowPage() {
               className="glass rounded-xl p-4 space-y-2"
             >
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Raw Result</div>
-              {result?.error && <WorkflowErrorBlock result={result} />}
-              <pre className="text-xs font-mono text-cyan-300/80 leading-relaxed overflow-x-auto">
+              {result.error && <WorkflowErrorBlock result={result} />}
+              <pre className="text-xs font-mono text-cyan-300/80 leading-relaxed overflow-x-auto max-h-96">
                 {JSON.stringify(result, null, 2)}
               </pre>
-              {result?.run_id && (
+              {result.run_id && (
                 <div className="text-xs font-mono text-muted-foreground">Run ID: {result.run_id}</div>
               )}
             </motion.div>
           )}
         </AnimatePresence>
+
       </div>
     </div>
   );

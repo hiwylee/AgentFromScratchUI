@@ -237,19 +237,71 @@ export interface WorkflowStepDef {
   description: string;
 }
 
-export interface WorkflowResult {
-  status?: string;
-  steps?: Array<{ name: string; status: string; result?: unknown }>;
-  current_step?: string;
+// Actual backend step shape
+export interface WorkflowStep {
+  step_id?: string;
+  name?: string;         // legacy
+  state?: string;        // backend field
+  status?: string;       // legacy
+  system?: string;
+  action?: string;
+  details?: Record<string, unknown>;
+  result?: unknown;
+}
+
+export interface TrustedCheckpoint {
+  schema_version?: string;
+  identity?: string;
+  hash?: string;
   run_id?: string;
+  workflow_id?: string;
+  template_id?: string;
+  template_version?: number;
+  period?: string;
+  record_ids?: string[];
+}
+
+export interface ReviewPacket {
+  workflow_id?: string;
+  run_id?: string;
+  template_id?: string;
+  template_version?: number;
+  period?: string;
+  affected_records?: string[];
+  failed_rules?: unknown[];
+  system_evidence?: Record<string, unknown>;
+  proposed_resolution?: string;
+  allowed_actions?: string[];
+  approval_impact?: string;
+  trusted_checkpoint?: TrustedCheckpoint;
+}
+
+export interface HumanGate {
+  required?: boolean;
+  state?: "checkpoint_required" | "paused" | "not_required" | "not_available";
+  review_packet?: ReviewPacket;
+}
+
+export interface WorkflowResult {
+  run_id?: string;
+  state?: string;
+  status?: string;       // legacy compat
+  steps?: WorkflowStep[];
+  current_step?: string;
+  human_gate?: HumanGate;
+  reconciliation?: Record<string, unknown>;
+  target_load?: Record<string, unknown>;
+  template?: Record<string, unknown>;
+  period?: string;
+  request_text?: string;
+  // unsupported_workflow
+  supported_workflows?: string[];
+  // error
   error?: string;
   error_code?: string;
+  // legacy
   requires_approval?: boolean;
-  approval_context?: {
-    step: string;
-    prompt: string;
-    data?: unknown;
-  };
+  approval_context?: { step: string; prompt: string; data?: unknown };
   raw?: string;
   [key: string]: unknown;
 }
