@@ -5,12 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, Bot, User, Loader2, ChevronDown, ChevronRight, Zap,
   CheckCircle2, XCircle, AlertCircle, HelpCircle, MemoryStick,
-  GitBranch,
+  GitBranch, Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import type { AgentResult, EvalResult, IntentResult, PlanResult } from "@/lib/types";
+import type { AgentResult, EvalResult, IntentResult, PlanResult, QueryPlan } from "@/lib/types";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -194,9 +194,11 @@ function IntentMeta({ intent }: { intent: IntentResult }) {
 
 function PlanBlock({ plan }: { plan: PlanResult }) {
   const [open, setOpen] = useState(false);
-  const steps = plan.steps ?? [];
-  const mode = plan.mode === "execution" ? "live" : "dry-run";
-  const modeColor = plan.mode === "execution"
+  // Backend: plan_shadow = { plan: { steps: [...] }, shadow_mode: true }
+  const steps = plan.plan?.steps ?? plan.steps ?? [];
+  const isLive = !plan.shadow_mode && plan.mode === "execution";
+  const mode = isLive ? "live" : "dry-run";
+  const modeColor = isLive
     ? "text-[oklch(0.75_0.15_145)] border-[oklch(0.60_0.18_145/0.4)] bg-[oklch(0.60_0.18_145/0.08)]"
     : "text-[oklch(0.65_0.22_200)] border-[oklch(0.65_0.22_200/0.4)] bg-[oklch(0.65_0.22_200/0.08)]";
 
@@ -260,6 +262,97 @@ function PlanBlock({ plan }: { plan: PlanResult }) {
                   </div>
                 );
               })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Query Plan block ──────────────────────────────────────────────
+
+function QueryPlanBlock({ queryPlan }: { queryPlan: QueryPlan }) {
+  const [open, setOpen] = useState(false);
+  const statusColor =
+    queryPlan.status === "planned"
+      ? "text-[oklch(0.75_0.15_145)] border-[oklch(0.60_0.18_145/0.4)] bg-[oklch(0.60_0.18_145/0.08)]"
+      : queryPlan.status === "blocked"
+      ? "text-[oklch(0.65_0.22_25)] border-[oklch(0.65_0.22_25/0.4)] bg-[oklch(0.55_0.22_25/0.08)]"
+      : "text-[oklch(0.82_0.16_80)] border-[oklch(0.82_0.16_80/0.4)] bg-[oklch(0.80_0.18_80/0.08)]";
+
+  return (
+    <div className="glass rounded-md px-3 py-2 space-y-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label="Toggle query plan"
+        className="w-full flex items-center justify-between gap-2 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Database className="w-3 h-3 text-muted-foreground" />
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">Query Plan</div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {queryPlan.status && (
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${statusColor}`}>
+              {queryPlan.status}
+            </span>
+          )}
+          {open ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="pt-1 space-y-2">
+              {queryPlan.proposed_sql && (
+                <div>
+                  <div className="text-[10px] font-mono text-muted-foreground/60 mb-1">Proposed SQL</div>
+                  <pre className="text-xs font-mono text-cyan-300/80 bg-black/20 px-3 py-2 rounded border border-border/20 overflow-x-auto whitespace-pre-wrap">
+                    {queryPlan.proposed_sql}
+                  </pre>
+                </div>
+              )}
+              {queryPlan.refusal_reason && (
+                <div className="text-xs text-[oklch(0.65_0.22_25)] font-mono">
+                  {queryPlan.refusal_reason}
+                </div>
+              )}
+              {queryPlan.assumptions && queryPlan.assumptions.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-mono text-muted-foreground/60 mb-0.5">Assumptions</div>
+                  {queryPlan.assumptions.map((a, i) => (
+                    <div key={i} className="text-xs text-muted-foreground">· {a}</div>
+                  ))}
+                </div>
+              )}
+              {((queryPlan.dimensions && queryPlan.dimensions.length > 0) ||
+                (queryPlan.measures && queryPlan.measures.length > 0)) && (
+                <div>
+                  <div className="text-[10px] font-mono text-muted-foreground/60 mb-1">Dimensions / Measures</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {queryPlan.dimensions?.map((d, i) => (
+                      <span key={i} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[oklch(0.65_0.22_200/0.1)] border border-[oklch(0.65_0.22_200/0.3)] text-[oklch(0.75_0.18_200)]">
+                        {d.alias ?? d.column}
+                      </span>
+                    ))}
+                    {queryPlan.measures?.map((m, i) => (
+                      <span key={i} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[oklch(0.80_0.18_80/0.1)] border border-[oklch(0.82_0.16_80/0.3)] text-[oklch(0.82_0.16_80)]">
+                        {m.alias ?? m.column}{m.aggregation ? `(${m.aggregation})` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -422,6 +515,7 @@ function ResultCard({
   const planShadow = result.plan_shadow;
   const activePlan = planExecution ?? planShadow;
 
+  const queryPlan = result.query_plan;
   const evalResult = result.eval_result;
   const memorySummary = result.memory_summary;
   const needsClarification = intent?.needs_clarification;
@@ -471,6 +565,9 @@ function ResultCard({
           )}
         </div>
       )}
+
+      {/* Query Plan */}
+      {queryPlan && <QueryPlanBlock queryPlan={queryPlan} />}
 
       {/* P9: Eval */}
       {evalResult && <EvalBadge evalResult={evalResult} />}

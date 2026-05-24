@@ -5,8 +5,8 @@ import path from "path";
 const AGENT_BIN = process.env.AGENT_BIN_PATH ?? "/Users/wylee/WorkspacesV2/AgentFromScratch/bin/agent";
 const RUN_DIR = process.env.AGENT_RUN_DIR ?? "/tmp/afs-runs";
 const AUDIT_LOG = process.env.AGENT_AUDIT_LOG ?? "/tmp/afs.jsonl";
-// cwd must be the AgentFromScratch project root so uv resolves the correct venv
 const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? path.dirname(path.dirname(path.resolve(AGENT_BIN)));
+const MEMORY_DIR = process.env.AGENT_MEMORY_DIR ?? path.join(PROJECT_DIR, "artifacts/memory");
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,10 +18,9 @@ export async function POST(req: NextRequest) {
     const result = await runAgent([
       "ask",
       query,
-      "--run-dir",
-      RUN_DIR,
-      "--audit-log",
-      AUDIT_LOG,
+      "--run-dir", RUN_DIR,
+      "--audit-log", AUDIT_LOG,
+      "--memory-dir", MEMORY_DIR,
     ]);
 
     return NextResponse.json(result);

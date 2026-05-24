@@ -74,6 +74,9 @@ export interface PlanStep {
   action?: string;
   status?: PlanStepStatus;
   requires_approval?: boolean;
+  risk_level?: string;
+  required_capabilities?: string[];
+  fallback_strategy?: string;
   latency_ms?: number;
   attempts?: number;
   tool_result?: Record<string, unknown>;
@@ -81,12 +84,54 @@ export interface PlanStep {
   result?: unknown;
 }
 
+export interface PlanStepResult {
+  step_id?: string;
+  status?: PlanStepStatus;
+  output?: unknown;
+  latency_ms?: number;
+}
+
+export interface PlanDefinition {
+  request_id?: string;
+  goal?: string;
+  primary_route?: string;
+  steps?: PlanStep[];
+  assumptions?: string[];
+}
+
+// Matches actual backend shape: { plan: { steps: [...] }, step_results: [], shadow_mode: true }
 export interface PlanResult {
-  mode: "shadow" | "execution";
+  plan?: PlanDefinition;
+  step_results?: PlanStepResult[];
+  shadow_mode?: boolean;
+  // legacy / computed fields kept for compatibility
+  mode?: "shadow" | "execution";
   plan_id?: string;
   steps?: PlanStep[];
   status?: string;
-  shadow_mode?: boolean;
+}
+
+// ── Query Plan (action.kind = inspect_schema / database_analysis) ──
+export interface QueryPlanDimension {
+  alias?: string;
+  column?: string;
+  type?: string;
+}
+
+export interface QueryPlanMeasure {
+  alias?: string;
+  column?: string;
+  aggregation?: string;
+}
+
+export interface QueryPlan {
+  schema_version?: string;
+  status?: "planned" | "blocked" | "clarification_required";
+  proposed_sql?: string;
+  assumptions?: string[];
+  dimensions?: QueryPlanDimension[];
+  measures?: QueryPlanMeasure[];
+  refusal_reason?: string | null;
 }
 
 // ── Agent Result (AgentLoop output) ───────────────────────────────
@@ -106,6 +151,7 @@ export interface AgentResult {
   // P8
   plan_shadow?: PlanResult;
   plan_execution?: PlanResult;
+  query_plan?: QueryPlan;
   // P9
   eval_result?: EvalResult;
   // P10

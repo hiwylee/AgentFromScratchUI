@@ -9,9 +9,20 @@ const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? path.dirname(path.dirname(p
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, sql } = body as { action: string; sql?: string };
+    const { action, sql, candidate_id, reviewer, notes } = body as {
+      action: string;
+      sql?: string;
+      candidate_id?: string;
+      reviewer?: string;
+      notes?: string;
+    };
 
-    if (!["adw-smoke", "adw-query", "review-candidates"].includes(action)) {
+    const VALID_ACTIONS = [
+      "adw-smoke", "adw-query", "adw-provision",
+      "review-candidates", "review-candidate-show",
+      "review-candidate-approve", "review-candidate-reject",
+    ];
+    if (!VALID_ACTIONS.includes(action)) {
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
 
@@ -37,7 +48,58 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
-    const result = await runAgent(["operator", "review-candidate", "list", "--audit-log", AUDIT_LOG], 15000);
+    if (action === "adw-provision") {
+      const result = await runAgent(
+        ["operator", "adw-provision-working-user",
+         "--grant-profile", "prototype-any-table-read",
+         "--confirm-live-adw-admin-provision",
+         "--audit-log", AUDIT_LOG],
+        90000
+      );
+      return NextResponse.json(result);
+    }
+
+    if (action === "review-candidates") {
+      const result = await runAgent(
+        ["operator", "review-candidate", "list", "--audit-log", AUDIT_LOG],
+        15000
+      );
+      return NextResponse.json(result);
+    }
+
+    // validate candidate_id for show/approve/reject
+    if (!candidate_id || !/^[a-zA-Z0-9._-]+$/.test(candidate_id)) {
+      return NextResponse.json({ error: "Invalid or missing candidate_id" }, { status: 400 });
+    }
+
+    if (action === "review-candidate-show") {
+      const result = await runAgent(
+        ["operator", "review-candidate", "show", "--candidate-id", candidate_id, "--audit-log", AUDIT_LOG],
+        15000
+      );
+      return NextResponse.json(result);
+    }
+
+    if (!reviewer || typeof reviewer !== "string" || !reviewer.trim()) {
+      return NextResponse.json({ error: "Missing reviewer" }, { status: 400 });
+    }
+
+    if (action === "review-candidate-approve") {
+      const result = await runAgent(
+        ["operator", "review-candidate", "approve",
+         "--candidate-id", candidate_id, "--reviewer", reviewer.trim(),
+         "--audit-log", AUDIT_LOG],
+        15000
+      );
+      return NextResponse.json(result);
+    }
+
+    // review-candidate-reject
+    const args = ["operator", "review-candidate", "reject",
+      "--candidate-id", candidate_id, "--reviewer", reviewer.trim(),
+      "--audit-log", AUDIT_LOG];
+    if (notes && notes.trim()) args.push("--notes", notes.trim());
+    const result = await runAgent(args, 15000);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
