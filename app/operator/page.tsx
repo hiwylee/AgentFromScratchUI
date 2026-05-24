@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings2, Database, Terminal, Loader2 } from "lucide-react";
+import { Settings2, Database, Terminal, Loader2, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -137,9 +137,9 @@ export default function OperatorPage() {
   const [queryError, setQueryError] = useState<string | null>(null);
   const [sql, setSql] = useState("");
 
-  const [configLoading, setConfigLoading] = useState(false);
-  const [configResult, setConfigResult] = useState<SectionResult>(null);
-  const [configError, setConfigError] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewResult, setReviewResult] = useState<SectionResult>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   async function callOperator(body: Record<string, unknown>): Promise<SectionResult> {
     const res = await fetch("/api/agent/operator", {
@@ -182,17 +182,17 @@ export default function OperatorPage() {
     }
   }
 
-  async function handleConfig() {
-    setConfigLoading(true);
-    setConfigResult(null);
-    setConfigError(null);
+  async function handleReviewCandidates() {
+    setReviewLoading(true);
+    setReviewResult(null);
+    setReviewError(null);
     try {
-      const data = await callOperator({ action: "config" });
-      setConfigResult(data);
+      const data = await callOperator({ action: "review-candidates" });
+      setReviewResult(data);
     } catch (err) {
-      setConfigError(err instanceof Error ? err.message : String(err));
+      setReviewError(err instanceof Error ? err.message : String(err));
     } finally {
-      setConfigLoading(false);
+      setReviewLoading(false);
     }
   }
 
@@ -204,7 +204,7 @@ export default function OperatorPage() {
         </div>
         <div>
           <h1 className="text-base font-semibold">Operator Tools</h1>
-          <p className="text-sm text-muted-foreground">ADW connectivity · query · config</p>
+          <p className="text-sm text-muted-foreground">ADW connectivity · query · candidates</p>
         </div>
       </div>
 
@@ -258,23 +258,24 @@ export default function OperatorPage() {
 
         <div className="glass rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">
-            <Settings2 className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-semibold">Config</span>
+            <ListChecks className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-semibold">Improvement Candidates</span>
           </div>
+          <p className="text-sm text-muted-foreground">List pending self-evolution improvement proposals</p>
           <Button
             type="button"
-            aria-label="Load config"
-            onClick={handleConfig}
-            disabled={configLoading}
+            aria-label="List improvement candidates"
+            onClick={handleReviewCandidates}
+            disabled={reviewLoading}
             className="gap-2"
           >
-            {configLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Load Config
+            {reviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            List Candidates
           </Button>
-          {configError && <ErrorCard message={configError} />}
-          {configResult && (
+          {reviewError && <ErrorCard message={reviewError} />}
+          {reviewResult && (
             <pre className="text-xs font-mono text-cyan-300/80 bg-black/20 px-3 py-2 rounded border border-border/20 overflow-x-auto">
-              {JSON.stringify(configResult, null, 2)}
+              {JSON.stringify(reviewResult, null, 2)}
             </pre>
           )}
         </div>
