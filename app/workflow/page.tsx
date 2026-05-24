@@ -6,16 +6,8 @@ import { GitBranch, Play, Loader2, CheckCircle2, Circle, AlertCircle, Clock } fr
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-
-interface WorkflowResult {
-  status?: string;
-  steps?: Array<{ name: string; status: string; result?: unknown }>;
-  current_step?: string;
-  run_id?: string;
-  error?: string;
-  raw?: string;
-  [key: string]: unknown;
-}
+import { parseError } from "@/lib/errors";
+import type { WorkflowResult } from "@/lib/types";
 
 const WORKFLOW_STEPS = [
   { id: "ab_lookup", label: "A/B Lookup", description: "Source data extraction" },
@@ -37,8 +29,6 @@ const STEP_EXAMPLES = [
   "금월 특허 자산 대체 등록 워크플로우 실행",
   "특허자산 대체 등록 처리 시작해줘",
 ];
-
-const SUPPORTED_HINT = "※ 현재 지원 워크플로우: 특허자산 대체 등록 (한국어, '특허'+'대체'+'등록' 포함 필요)";
 
 function StepIcon({ status }: { status: StepStatus }) {
   if (status === "completed") return <CheckCircle2 className="w-4 h-4 text-[oklch(0.70_0.18_145)]" />;
@@ -67,7 +57,9 @@ function mapResultToSteps(result: WorkflowResult): Record<string, StepState> {
       }
     }
   } else if (result.current_step) {
-    const idx = WORKFLOW_STEPS.findIndex((s) => s.id === result.current_step || s.label === result.current_step);
+    const idx = WORKFLOW_STEPS.findIndex(
+      (s) => s.id === result.current_step || s.label === result.current_step
+    );
     for (let i = 0; i < WORKFLOW_STEPS.length; i++) {
       if (i < idx) states[WORKFLOW_STEPS[i].id] = { status: "completed" };
       else if (i === idx) states[WORKFLOW_STEPS[i].id] = { status: "running" };
@@ -81,6 +73,49 @@ function mapResultToSteps(result: WorkflowResult): Record<string, StepState> {
   }
 
   return states;
+}
+
+function WorkflowErrorBlock({ result }: { result: WorkflowResult }) {
+  const err = parseError(result);
+  if (!err) return null;
+
+  return (
+    <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-1">
+      <div className="text-xs uppercase tracking-widest text-destructive/80 font-semibold">오류</div>
+      {err.code === "unsupported_workflow" ? (
+        <div className="space-y-1">
+          <div className="text-sm text-destructive font-medium">지원하지 않는 워크플로우 요청입니다.</div>
+          {err.supported && err.supported.length > 0 && (
+            <div className="text-sm text-muted-foreground">
+              지원 워크플로우:{" "}
+              {err.supported.map((w) => (
+                <span key={w} className="font-mono text-foreground">{w}</span>
+              ))}
+            </div>
+          )}
+          <div className="text-sm text-muted-foreground">
+            요청 텍스트에{" "}
+            <span className="text-yellow-400">특허</span> +{" "}
+            <span className="text-yellow-400">대체</span> +{" "}
+            <span className="text-yellow-400">등록</span>{" "}
+            세 단어가 포함되어야 합니다.
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="text-sm font-mono text-destructive/90">
+            [{err.code}] {err.message}
+          </div>
+          {err.step && (
+            <div className="text-xs text-muted-foreground">Step: <span className="font-mono">{err.step}</span></div>
+          )}
+          {!err.isKnown && (
+            <div className="text-xs text-muted-foreground/60 italic">알 수 없는 오류 유형</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function WorkflowPage() {
@@ -108,7 +143,8 @@ export default function WorkflowPage() {
       setResult(data);
       setStepStates(mapResultToSteps(data));
       if (data.error) {
-        toast.error(`Workflow error: ${data.error}`);
+        const err = parseError(data);
+        toast.error(err?.isKnown ? `[${err.code}] ${err.message}` : `Workflow error: ${data.error}`);
       } else {
         toast.success("Workflow completed");
       }
@@ -143,7 +179,7 @@ export default function WorkflowPage() {
           <Textarea
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Describe the workflow to run… e.g. Reconcile Q1 sales between source A and Oracle ADW"
+            placeholder="Describe the workflow to run… e.g. 이번달 특허자산 대체 등록 진행해줘"
             className="min-h-[80px] resize-none bg-input/40 border-border/40 font-mono text-sm placeholder:text-muted-foreground/40"
             disabled={loading}
           />
@@ -160,6 +196,7 @@ export default function WorkflowPage() {
               {STEP_EXAMPLES.map((ex) => (
                 <button
                   key={ex}
+                  type="button"
                   onClick={() => setQuery(ex)}
                   disabled={loading}
                   className="text-sm px-2 py-1 rounded-md border border-border/40 text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors"
@@ -170,7 +207,7 @@ export default function WorkflowPage() {
             </div>
           </div>
           <div className="text-xs text-muted-foreground border border-border/30 rounded-md px-3 py-2 bg-secondary/20">
-            {SUPPORTED_HINT}
+            {"※ 현재 지원 워크플로우: 특허자산 대체 등록 (한국어, '특허'+'대체'+'등록' 포함 필요)"}
           </div>
         </div>
 
@@ -184,7 +221,6 @@ export default function WorkflowPage() {
 
               return (
                 <div key={step.id} className="flex gap-4">
-                  {/* Connector line */}
                   <div className="flex flex-col items-center flex-shrink-0">
                     <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${
                       state.status === "completed"
@@ -204,7 +240,6 @@ export default function WorkflowPage() {
                     )}
                   </div>
 
-                  {/* Content */}
                   <motion.div
                     className="flex-1 pb-4"
                     animate={{ opacity: state.status === "pending" ? 0.75 : 1 }}
@@ -248,20 +283,7 @@ export default function WorkflowPage() {
               className="glass rounded-xl p-4 space-y-2"
             >
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Raw Result</div>
-              {result?.error && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-1">
-                  <div className="text-xs uppercase tracking-widest text-destructive/80 font-semibold">오류</div>
-                  {result.error.includes("unsupported_workflow") ? (
-                    <div className="space-y-1">
-                      <div className="text-sm text-destructive font-medium">지원하지 않는 워크플로우 요청입니다.</div>
-                      <div className="text-sm text-muted-foreground">지원 워크플로우: <span className="font-mono text-foreground">patent_asset_replacement_registration</span></div>
-                      <div className="text-sm text-muted-foreground">요청 텍스트에 <span className="text-yellow-400">특허</span> + <span className="text-yellow-400">대체</span> + <span className="text-yellow-400">등록</span> 세 단어가 포함되어야 합니다.</div>
-                    </div>
-                  ) : (
-                    <pre className="text-sm font-mono text-destructive/90 whitespace-pre-wrap break-all">{result.error}</pre>
-                  )}
-                </div>
-              )}
+              {result?.error && <WorkflowErrorBlock result={result} />}
               <pre className="text-xs font-mono text-cyan-300/80 leading-relaxed overflow-x-auto">
                 {JSON.stringify(result, null, 2)}
               </pre>

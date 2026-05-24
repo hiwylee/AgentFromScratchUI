@@ -6,44 +6,15 @@ import { FileText, Filter, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-interface AuditEntry {
-  _line: number;
-  event?: string;
-  run_id?: string;
-  ts?: string;
-  timestamp?: string;
-  [key: string]: unknown;
-}
-
-interface AuditData {
-  entries: AuditEntry[];
-  total: number;
-  eventTypes: string[];
-  error?: string;
-}
-
-const EVENT_COLORS: Record<string, string> = {
-  run_started: "text-[oklch(0.65_0.22_200)] bg-[oklch(0.65_0.22_200/0.1)] border-[oklch(0.65_0.22_200/0.3)]",
-  run_completed: "text-[oklch(0.70_0.18_145)] bg-[oklch(0.60_0.18_145/0.1)] border-[oklch(0.60_0.18_145/0.3)]",
-  run_failed: "text-[oklch(0.65_0.22_25)] bg-[oklch(0.55_0.22_25/0.1)] border-[oklch(0.55_0.22_25/0.3)]",
-  action_executed: "text-[oklch(0.72_0.19_280)] bg-[oklch(0.72_0.19_280/0.1)] border-[oklch(0.72_0.19_280/0.3)]",
-  schema_inspected: "text-[oklch(0.70_0.20_300)] bg-[oklch(0.70_0.20_300/0.1)] border-[oklch(0.70_0.20_300/0.3)]",
-  parse_error: "text-[oklch(0.80_0.18_80)] bg-[oklch(0.70_0.18_80/0.1)] border-[oklch(0.70_0.18_80/0.3)]",
-};
-
-function getEventStyle(event?: string) {
-  if (!event) return "text-muted-foreground bg-muted/20 border-border/30";
-  return (
-    EVENT_COLORS[event] ??
-    "text-muted-foreground bg-secondary/30 border-border/30"
-  );
-}
+import { getEventClasses } from "@/lib/auditColors";
+import type { AuditEntry, AuditData } from "@/lib/types";
 
 function formatTs(ts?: string) {
   if (!ts) return "—";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
   try {
-    return new Date(ts).toLocaleString("en-US", {
+    return d.toLocaleString("en-US", {
       month: "short", day: "numeric",
       hour: "2-digit", minute: "2-digit", second: "2-digit",
     });
@@ -57,6 +28,116 @@ function summarize(entry: AuditEntry): string {
     .slice(0, 3)
     .map(([k, v]) => `${k}=${JSON.stringify(v)}`);
   return parts.join(" · ") || "—";
+}
+
+function EvalDetail({ entry }: { entry: AuditEntry }) {
+  const evalResult = entry.eval_result ?? (entry.data as Record<string, unknown> | undefined)?.eval_result;
+  if (!evalResult || typeof evalResult !== "object") {
+    return <pre className="px-4 py-3 text-xs font-mono text-cyan-300/80 leading-relaxed">{JSON.stringify(entry, null, 2)}</pre>;
+  }
+  const er = evalResult as { passed?: boolean; score?: number; checks?: Array<{ name: string; passed: boolean; detail?: string }> };
+  return (
+    <div className="px-4 py-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className={`text-xs font-mono px-2 py-0.5 rounded-full border ${er.passed ? "text-[oklch(0.75_0.15_145)] border-[oklch(0.60_0.18_145/0.4)] bg-[oklch(0.60_0.18_145/0.1)]" : "text-[oklch(0.70_0.20_25)] border-[oklch(0.55_0.22_25/0.4)] bg-[oklch(0.55_0.22_25/0.1)]"}`}>
+          {er.passed ? "✓ PASSED" : "✗ FAILED"}
+        </span>
+        {er.score != null && (
+          <span className="text-xs font-mono text-muted-foreground">score: {er.score.toFixed(2)}</span>
+        )}
+      </div>
+      {er.checks && er.checks.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Checks</div>
+          {er.checks.map((c, i) => (
+            <div key={i} className="flex items-start gap-2 text-xs">
+              <span className={c.passed ? "text-[oklch(0.75_0.15_145)]" : "text-[oklch(0.70_0.20_25)]"}>
+                {c.passed ? "✓" : "✗"}
+              </span>
+              <span className="font-mono text-foreground/80">{c.name}</span>
+              {c.detail && <span className="text-muted-foreground">{c.detail}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      <details className="text-xs">
+        <summary className="text-muted-foreground cursor-pointer hover:text-foreground">Raw JSON</summary>
+        <pre className="mt-1 font-mono text-cyan-300/70 leading-relaxed overflow-x-auto">{JSON.stringify(entry, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function SessionDetail({ entry }: { entry: AuditEntry }) {
+  const summary = entry.summary ?? (entry.data as Record<string, unknown> | undefined)?.summary;
+  if (!summary || typeof summary !== "object") {
+    return <pre className="px-4 py-3 text-xs font-mono text-cyan-300/80 leading-relaxed">{JSON.stringify(entry, null, 2)}</pre>;
+  }
+  const s = summary as {
+    session_id?: string; total_runs?: number; failed_runs?: number;
+    success_rate?: number; failure_patterns?: string[]; proposed_memory_paths?: string[];
+  };
+  return (
+    <div className="px-4 py-3 space-y-3">
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        {s.total_runs != null && <div><span className="text-muted-foreground">Total runs: </span><span className="font-mono">{s.total_runs}</span></div>}
+        {s.failed_runs != null && <div><span className="text-muted-foreground">Failed: </span><span className="font-mono text-[oklch(0.70_0.20_25)]">{s.failed_runs}</span></div>}
+        {s.success_rate != null && <div><span className="text-muted-foreground">Success rate: </span><span className="font-mono">{(s.success_rate * 100).toFixed(0)}%</span></div>}
+      </div>
+      {s.failure_patterns && s.failure_patterns.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Failure Patterns</div>
+          {s.failure_patterns.map((p, i) => (
+            <div key={i} className="text-xs font-mono text-[oklch(0.82_0.16_80)] bg-[oklch(0.70_0.18_80/0.08)] px-2 py-1 rounded border border-[oklch(0.70_0.18_80/0.2)]">
+              {p}
+            </div>
+          ))}
+        </div>
+      )}
+      {s.proposed_memory_paths && s.proposed_memory_paths.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Proposed Memory</div>
+          {s.proposed_memory_paths.map((p, i) => (
+            <div key={i} className="text-xs font-mono text-[oklch(0.75_0.18_290)] truncate">{p}</div>
+          ))}
+        </div>
+      )}
+      <details className="text-xs">
+        <summary className="text-muted-foreground cursor-pointer hover:text-foreground">Raw JSON</summary>
+        <pre className="mt-1 font-mono text-cyan-300/70 leading-relaxed overflow-x-auto">{JSON.stringify(entry, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function DetailPanel({ entry, onClose }: { entry: AuditEntry; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      className="w-80 border-l border-border/50 flex flex-col bg-background/50"
+    >
+      <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex px-2 py-0.5 rounded-full border text-[10px] font-mono font-medium ${getEventClasses(entry.event)}`}>
+            {entry.event ?? "—"}
+          </span>
+        </div>
+        <button onClick={onClose} aria-label="Close detail panel" className="text-muted-foreground hover:text-foreground text-xs">✕</button>
+      </div>
+      <ScrollArea className="flex-1">
+        {entry.event === "answer_evaluated" ? (
+          <EvalDetail entry={entry} />
+        ) : entry.event === "session_summarized" ? (
+          <SessionDetail entry={entry} />
+        ) : (
+          <pre className="px-4 py-3 text-xs font-mono text-cyan-300/80 leading-relaxed">
+            {JSON.stringify(entry, null, 2)}
+          </pre>
+        )}
+      </ScrollArea>
+    </motion.div>
+  );
 }
 
 export default function AuditPage() {
@@ -134,7 +215,11 @@ export default function AuditPage() {
               <button
                 key={et}
                 onClick={() => setEventFilter(et === eventFilter ? "" : et)}
-                className={`text-xs px-2 py-0.5 rounded-full border font-mono transition-all ${eventFilter === et ? "bg-primary/20 border-primary/40 text-primary" : "border-border/30 text-muted-foreground hover:text-foreground"}`}
+                className={`text-xs px-2 py-0.5 rounded-full border font-mono transition-all ${
+                  eventFilter === et
+                    ? "bg-primary/20 border-primary/40 text-primary"
+                    : `border-border/30 text-muted-foreground hover:text-foreground`
+                }`}
               >
                 {et}
               </button>
@@ -150,7 +235,7 @@ export default function AuditPage() {
             <thead className="sticky top-0 bg-background/95 backdrop-blur-sm z-10">
               <tr className="border-b border-border/40">
                 <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-widest text-muted-foreground font-medium w-40">Timestamp</th>
-                <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-widest text-muted-foreground font-medium w-36">Event</th>
+                <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-widest text-muted-foreground font-medium w-40">Event</th>
                 <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-widest text-muted-foreground font-medium w-48">Run ID</th>
                 <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Summary</th>
               </tr>
@@ -184,10 +269,10 @@ export default function AuditPage() {
                   }`}
                 >
                   <td className="px-4 py-2 font-mono text-muted-foreground whitespace-nowrap">
-                    {formatTs(entry.ts ?? entry.timestamp as string | undefined)}
+                    {formatTs(entry.ts ?? (typeof entry.timestamp === "string" ? entry.timestamp : undefined))}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full border text-[10px] font-mono font-medium ${getEventStyle(entry.event)}`}>
+                    <span className={`inline-flex px-2 py-0.5 rounded-full border text-[10px] font-mono font-medium ${getEventClasses(entry.event)}`}>
                       {entry.event ?? "—"}
                     </span>
                   </td>
@@ -205,21 +290,7 @@ export default function AuditPage() {
 
         {/* Detail panel */}
         {selectedEntry && (
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="w-80 border-l border-border/50 flex flex-col bg-background/50"
-          >
-            <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between">
-              <span className="text-xs font-semibold">Entry Detail</span>
-              <button onClick={() => setSelectedEntry(null)} className="text-muted-foreground hover:text-foreground text-xs">✕</button>
-            </div>
-            <ScrollArea className="flex-1">
-              <pre className="px-4 py-3 text-xs font-mono text-cyan-300/80 leading-relaxed">
-                {JSON.stringify(selectedEntry, null, 2)}
-              </pre>
-            </ScrollArea>
-          </motion.div>
+          <DetailPanel entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
         )}
       </div>
     </div>
