@@ -4,7 +4,7 @@ import path from "path";
 
 const AGENT_BIN = process.env.AGENT_BIN_PATH ?? "/Users/wylee/WorkspacesV2/AgentFromScratch/bin/agent";
 const AUDIT_LOG = process.env.AGENT_AUDIT_LOG ?? "/tmp/afs.jsonl";
-const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? path.dirname(path.dirname(path.resolve(AGENT_BIN)));
+const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? "/opt/AgentFromScratch";
 
 export async function POST(req: NextRequest) {
   try {
@@ -112,7 +112,7 @@ function runAgent(args: string[], timeout: number): Promise<unknown> {
     const agentPath = path.resolve(AGENT_BIN);
     const proc = spawn(agentPath, args, {
       cwd: PROJECT_DIR,
-      env: { ...process.env, UV_CACHE_DIR: path.join(PROJECT_DIR, ".uv-cache") },
+      env: { ...process.env, UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? path.join(PROJECT_DIR, ".uv-cache") },
       timeout,
     });
 

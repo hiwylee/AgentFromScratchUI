@@ -5,7 +5,7 @@ import path from "path";
 const AGENT_BIN = process.env.AGENT_BIN_PATH ?? "/Users/wylee/WorkspacesV2/AgentFromScratch/bin/agent";
 const RUN_DIR = process.env.AGENT_RUN_DIR ?? "/tmp/afs-runs";
 const AUDIT_LOG = process.env.AGENT_AUDIT_LOG ?? "/tmp/afs.jsonl";
-const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? path.dirname(path.dirname(path.resolve(AGENT_BIN)));
+const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? "/opt/AgentFromScratch";
 const MEMORY_DIR = process.env.AGENT_MEMORY_DIR ?? path.join(PROJECT_DIR, "artifacts/memory");
 
 export async function POST(req: NextRequest) {
@@ -35,7 +35,7 @@ function runAgent(args: string[]): Promise<unknown> {
     const agentPath = path.resolve(AGENT_BIN);
     const proc = spawn(agentPath, args, {
       cwd: PROJECT_DIR,
-      env: { ...process.env, UV_CACHE_DIR: path.join(PROJECT_DIR, ".uv-cache") },
+      env: { ...process.env, UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? path.join(PROJECT_DIR, ".uv-cache") },
       timeout: 60000,
     });
 

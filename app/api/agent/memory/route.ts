@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 
 const AGENT_BIN = process.env.AGENT_BIN_PATH ?? "/Users/wylee/WorkspacesV2/AgentFromScratch/bin/agent";
-const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? path.dirname(path.dirname(path.resolve(AGENT_BIN)));
+const PROJECT_DIR = process.env.AGENT_PROJECT_DIR ?? "/opt/AgentFromScratch";
 
 const ALLOWED_DIR = path.resolve(PROJECT_DIR, "artifacts/memory");
 
